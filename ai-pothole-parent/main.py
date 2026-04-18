@@ -28,7 +28,7 @@ def startup_event():
     """Load model at server startup"""
     model_path = os.getenv(
         "POTHOLE_MODEL_PATH",
-        r"C:\Users\shreeram\OneDrive\Desktop\MAIN EL\hotspot-prioritizer\ai_service\severity_model.pth"
+        "models/pothole_severity.pth"
     )
     pothole_model_loader.load_model(model_path)
     logger.info("Pothole severity prediction service ready on port 8003")

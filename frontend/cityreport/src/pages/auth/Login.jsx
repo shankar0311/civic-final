@@ -5,6 +5,7 @@ import { Mail, Lock, LogIn } from 'lucide-react';
 import Button from '../../components/shared/Button';
 import Card from '../../components/shared/Card';
 import './Auth.css';
+import { getApiBaseUrl } from '../../api';
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -105,7 +106,7 @@ const Login = () => {
                             variant="outline"
                             fullWidth
                             size="lg"
-                            onClick={() => window.location.href = 'http://localhost:8005/auth/google/login'}
+                            onClick={() => window.location.href = `${getApiBaseUrl()}/auth/google/login`}
                             type="button"
                         >
                             <svg className="btn-icon" width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">

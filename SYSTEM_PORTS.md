@@ -15,6 +15,9 @@ All code changes and docker reruns MUST adhere to these mappings.
 
 These are used for inter-service communication within Docker.
 
+AI services are disabled by default in `docker-compose.yml` (they are heavy) and are only started when running with the `ai` profile:
+`docker compose --profile ai up --build`.
+
 | Service | Port | Endpoint |
 | :--- | :--- | :--- |
 | **AI Duplicate** | `9001` | `http://ai-duplicate:9001` |

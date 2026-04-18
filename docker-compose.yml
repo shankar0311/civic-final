@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgis/postgis:15-3.3
@@ -49,19 +47,13 @@ services:
       - "9001:9001"
     environment:
       MODEL_PATH: /app/models
-    volumes:
-      - ./ai-duplicate:/app
+    profiles: ["ai"]
 
   ai-pothole-child:
     build: ./ai-pothole-child
     ports:
       - "8001:8001"
-    volumes:
-      - C:\Users\shreeram\OneDrive\Desktop\MAIN EL\hotspot-prioritizer\ai_service:/external_models:ro
-    deploy:
-      resources:
-        limits:
-          memory: 4G
+    profiles: ["ai"]
 
   ai-pothole-parent:
     build: ./ai-pothole-parent
@@ -69,19 +61,13 @@ services:
       - "8003:8003"
     environment:
       POTHOLE_MODEL_PATH: /app/models/pothole_severity.pth
-    volumes:
-      - C:\Users\shreeram\OneDrive\Desktop\MAIN EL\hotspot-prioritizer\ai_service:/app/models:ro
+    profiles: ["ai"]
 
   ai-garbage-child:
     build: ./ai-garbage-child
     ports:
       - "8002:8002"
-    volumes:
-      - C:\Users\shreeram\OneDrive\Desktop\MAIN EL\hotspot-prioritizer\ai_service:/external_models:ro
-    deploy:
-      resources:
-        limits:
-          memory: 4G
+    profiles: ["ai"]
 
   ai-garbage-parent:
     build: ./ai-garbage-parent
@@ -89,8 +75,7 @@ services:
       - "8004:8004"
     environment:
       GARBAGE_MODEL_PATH: /app/models/models/parent_severity_model.pkl
-    volumes:
-      - C:\Users\shreeram\OneDrive\Desktop\MAIN EL\hotspot-prioritizer\ai_service:/app/models:ro
+    profiles: ["ai"]
 
 volumes:
   postgres_data:

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from sqlalchemy import text
 from database import engine, Base
 from routers import auth, reports, analytics, votes, upload
 
@@ -32,8 +33,18 @@ app.include_router(upload.router)
 
 @app.on_event("startup")
 async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Create extensions in isolated transactions so a failure doesn't poison the whole startup transaction.
+    async with engine.connect() as conn:
+        for stmt in ("CREATE EXTENSION IF NOT EXISTS postgis;", "CREATE EXTENSION IF NOT EXISTS vector;"):
+            try:
+                async with conn.begin():
+                    await conn.execute(text(stmt))
+            except Exception as e:
+                # Avoid crashing startup if the extension isn't available (e.g., pgvector not installed)
+                print(f"Extension init skipped: {stmt} ({e})")
+
+        async with conn.begin():
+            await conn.run_sync(Base.metadata.create_all)
 
 @app.get("/")
 def read_root():

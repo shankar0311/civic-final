@@ -1,3 +1,17 @@
 
 # Environment Variables
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+
+# Local Docker config (created by tooling)
+.docker/

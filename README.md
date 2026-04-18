@@ -34,12 +34,16 @@ A full-stack Citizen Issue Reporting & Management System with AI capabilities.
    ```bash
    docker compose up --build
    ```
-   This starts:
-   - Frontend: http://localhost:3000 (or http://localhost via Nginx)
-   - Backend: http://localhost:8000
-   - AI Duplicate: http://localhost:9001
-   - AI LLM: http://localhost:9002
+   This starts the core stack:
+   - Frontend: http://localhost:3005
+   - Backend: http://localhost:8005
    - Postgres: localhost:5432
+
+   To also build/run the (optional) AI services, run:
+   ```bash
+   docker compose --profile ai up --build
+   ```
+   AI services are heavy (PyTorch / transformers) and are disabled by default.
 
 4. **Seed Data**
    To populate the database with synthetic reports:
@@ -72,5 +76,5 @@ npm run dev
    - You may need to run `CREATE EXTENSION vector;` manually if the image doesn't auto-enable it, but `ankane/pgvector` should handle it.
 
 ## API Documentation
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8005/docs
+- ReDoc: http://localhost:8005/redoc

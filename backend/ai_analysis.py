@@ -1,6 +1,8 @@
 import httpx
 import logging
 from typing import Dict, Optional
+import time
+import hashlib
 
 logger = logging.getLogger("backend")
 
@@ -11,6 +13,92 @@ POTHOLE_CHILD_URL = os.getenv("AI_POTHOLE_CHILD_URL", "http://ai-pothole-child:8
 POTHOLE_PARENT_URL = os.getenv("AI_POTHOLE_PARENT_URL", "http://ai-pothole-parent:8003")
 GARBAGE_CHILD_URL = os.getenv("AI_GARBAGE_CHILD_URL", "http://ai-garbage-child:8002")
 GARBAGE_PARENT_URL = os.getenv("AI_GARBAGE_PARENT_URL", "http://ai-garbage-parent:8004")
+
+
+_SERVICE_HEALTH_CACHE: dict[str, tuple[bool, float]] = {}
+
+
+def _severity_level_from_score(score: float) -> str:
+    if score >= 80:
+        return "critical"
+    if score >= 60:
+        return "high"
+    if score >= 40:
+        return "medium"
+    return "low"
+
+
+def _stable_unit_float(seed: str) -> float:
+    digest = hashlib.md5(seed.encode("utf-8")).digest()
+    value = int.from_bytes(digest[:8], "big")
+    return (value % 10_000_000) / 10_000_000.0
+
+
+async def _is_service_healthy(url: str, client: httpx.AsyncClient, ttl_seconds: float = 10.0) -> bool:
+    now = time.time()
+    cached = _SERVICE_HEALTH_CACHE.get(url)
+    if cached and (now - cached[1]) <= ttl_seconds:
+        return cached[0]
+
+    try:
+        resp = await client.get(f"{url}/health", timeout=0.8)
+        ok = resp.status_code == 200
+    except Exception:
+        ok = False
+
+    _SERVICE_HEALTH_CACHE[url] = (ok, now)
+    return ok
+
+
+def _pothole_fallback_scores(description: str, latitude: float, longitude: float, upvotes: int) -> Dict:
+    text = (description or "").lower()
+    seed = f"pothole|{description}|{latitude:.6f}|{longitude:.6f}|{upvotes}"
+    r = _stable_unit_float(seed)
+
+    depth_hint = 0.0
+    if any(k in text for k in ["deep", "6 inch", "6 inches", "8 inch", "8 inches"]):
+        depth_hint += 0.25
+    if any(k in text for k in ["huge", "massive", "very large", "danger"]):
+        depth_hint += 0.15
+
+    spread_hint = 0.0
+    if any(k in text for k in ["wide", "large", "diameter", "2 feet", "2ft", "3 feet", "3ft"]):
+        spread_hint += 0.25
+    if any(k in text for k in ["intersection", "main road", "highway", "traffic"]):
+        spread_hint += 0.10
+
+    emotion_hint = 0.0
+    if any(k in text for k in ["urgent", "immediately", "asap", "critical", "emergency"]):
+        emotion_hint += 0.35
+    if any(k in text for k in ["danger", "accident", "injury"]):
+        emotion_hint += 0.35
+
+    upvote_score = min(max(upvotes, 0) / 100.0, 1.0)
+    location_score = 0.5
+
+    depth_score = min(max(0.25 + depth_hint + (r * 0.15), 0.0), 1.0)
+    spread_score = min(max(0.30 + spread_hint + ((1 - r) * 0.20), 0.0), 1.0)
+    emotion_score = min(max(0.20 + emotion_hint + ((r * 0.10)), 0.0), 1.0)
+
+    severity = (
+        (spread_score * 0.3) +
+        (depth_score * 0.3) +
+        (emotion_score * 0.2) +
+        (location_score * 0.1) +
+        (upvote_score * 0.1)
+    ) * 100.0
+
+    return {
+        "pothole_depth_score": round(depth_score, 3),
+        "pothole_spread_score": round(spread_score, 3),
+        "emotion_score": round(emotion_score, 3),
+        "location_score": round(location_score, 3),
+        "upvote_score": round(upvote_score, 3),
+        "ai_severity_score": round(max(0.0, min(100.0, severity)), 2),
+        "ai_severity_level": _severity_level_from_score(severity),
+        "location_meta": '{"mode":"fallback","source":"local-heuristics"}',
+        "sentiment_meta": '{"mode":"fallback","source":"local-heuristics"}',
+    }
 
 
 async def analyze_pothole_report(
@@ -28,6 +116,13 @@ async def analyze_pothole_report(
     """
     try:
         async with httpx.AsyncClient() as client:
+            # On low-resource machines, AI services may not be running.
+            # Avoid long retries/timeouts and return a lightweight fallback analysis instead.
+            child_ok = await _is_service_healthy(POTHOLE_CHILD_URL, client)
+            parent_ok = await _is_service_healthy(POTHOLE_PARENT_URL, client)
+            if not (child_ok and parent_ok):
+                return _pothole_fallback_scores(description, latitude, longitude, upvotes)
+
             # Read image from local file system
             # image_url is like "/uploads/filename.jpg"
             from pathlib import Path
@@ -136,17 +231,7 @@ async def analyze_pothole_report(
     
     except Exception as e:
         logger.error(f"Pothole analysis failed: {e}")
-        return {
-            "pothole_depth_score": 0.0,
-            "pothole_spread_score": 0.0,
-            "emotion_score": 0.0,
-            "location_score": 0.0,
-            "upvote_score": 0.0,
-            "ai_severity_score": 50.0,
-            "ai_severity_level": "medium",
-            "location_meta": "{}",
-            "sentiment_meta": "{}"
-        }
+        return _pothole_fallback_scores(description, latitude, longitude, upvotes)
 
 
 async def analyze_garbage_report(

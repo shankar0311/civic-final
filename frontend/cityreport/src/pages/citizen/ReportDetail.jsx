@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { ArrowLeft, MapPin, Calendar, ThumbsUp, MessageSquare, Send } from 'lucide-react';
 import Navbar from '../../components/shared/Navbar';
 import Button from '../../components/shared/Button';
@@ -9,6 +8,7 @@ import Badge from '../../components/shared/Badge';
 import AIAnalysisCard from '../../components/AIAnalysisCard';
 import './ReportDetail.css';
 import { getImageUrl } from '../../utils/image';
+import api from '../../api';
 
 const MOCK_REPORT = {
   id: 1,
@@ -43,7 +43,7 @@ const ReportDetail = () => {
     const fetchReport = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`http://localhost:8005/reports/${id}`);
+        const response = await api.get(`/reports/${id}`);
         setReport(response.data);
       } catch (error) {
         console.error("Error fetching report:", error);
@@ -106,7 +106,7 @@ const ReportDetail = () => {
       const token = localStorage.getItem('token');
       const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 
-      await axios.post(`http://localhost:8005/reports/${report.id}/upvote`, {}, config);
+      await api.post(`/reports/${report.id}/upvote`, {}, config);
 
     } catch (error) {
       console.error("Upvote failed:", error);

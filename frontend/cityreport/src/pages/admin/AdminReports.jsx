@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { Filter, SortDesc, Brain } from 'lucide-react';
 import Navbar from '../../components/shared/Navbar';
 import Card from '../../components/shared/Card';
@@ -8,6 +7,7 @@ import Badge from '../../components/shared/Badge';
 import Button from '../../components/shared/Button';
 import './AdminReports.css';
 import { getImageUrl } from '../../utils/image';
+import api from '../../api';
 
 const AdminReports = () => {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ const AdminReports = () => {
         params.append('status', filterStatus);
       }
 
-      const response = await axios.get(`http://localhost:8005/reports?${params}`);
+      const response = await api.get(`/reports?${params}`);
       setReports(response.data);
       setLoading(false);
     } catch (error) {
@@ -178,12 +178,12 @@ const AdminReports = () => {
                   <div className="ai-breakdown">
                     <h4 className="ai-breakdown-title">AI Analysis</h4>
                     <div className="ai-scores-grid">
-                      {report.category === "pothole" && (
+                      {(report.category === "pothole" || report.category === "road_issues") && (
                         <>
                           <div className="ai-score-item">
                             <span className="ai-score-label">Depth</span>
                             <span className="ai-score-value">
-                              {report.pothole_depth_score
+                              {report.pothole_depth_score !== null && report.pothole_depth_score !== undefined
                                 ? `${Math.round(report.pothole_depth_score * 100)}%`
                                 : "N/A"}
                             </span>
@@ -191,19 +191,19 @@ const AdminReports = () => {
                           <div className="ai-score-item">
                             <span className="ai-score-label">Spread</span>
                             <span className="ai-score-value">
-                              {report.pothole_spread_score
+                              {report.pothole_spread_score !== null && report.pothole_spread_score !== undefined
                                 ? `${Math.round(report.pothole_spread_score * 100)}%`
                                 : "N/A"}
                             </span>
                           </div>
                         </>
                       )}
-                      {report.category === "garbage" && (
+                      {(report.category === "garbage" || report.category === "waste_management") && (
                         <>
                           <div className="ai-score-item">
                             <span className="ai-score-label">Volume</span>
                             <span className="ai-score-value">
-                              {report.garbage_volume_score
+                              {report.garbage_volume_score !== null && report.garbage_volume_score !== undefined
                                 ? `${Math.round(report.garbage_volume_score * 100)}%`
                                 : "N/A"}
                             </span>
@@ -211,7 +211,7 @@ const AdminReports = () => {
                           <div className="ai-score-item">
                             <span className="ai-score-label">Hazard</span>
                             <span className="ai-score-value">
-                              {report.garbage_waste_type_score
+                              {report.garbage_waste_type_score !== null && report.garbage_waste_type_score !== undefined
                                 ? `${Math.round(report.garbage_waste_type_score * 100)}%`
                                 : "N/A"}
                             </span>

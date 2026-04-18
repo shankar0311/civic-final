@@ -433,6 +433,81 @@ async def verify_report(
     await db.refresh(report)
     return report
 
+
+@router.post("/{report_id}/reanalyze", response_model=ReportResponse)
+async def reanalyze_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Re-run AI/fallback analysis for an existing report and persist updated scores.
+
+    Useful when AI services were offline during report creation or when using
+    lightweight fallback logic on low-resource machines.
+    """
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    result = await db.execute(select(Report).where(Report.id == report_id))
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Fetch bytes if the image is stored in DB
+    image_bytes = None
+    if report.image_url and "/upload/image/" in report.image_url:
+        try:
+            from models import StoredImage
+            image_id = report.image_url.split("/upload/image/")[-1]
+            img_res = await db.execute(select(StoredImage).where(StoredImage.id == image_id))
+            stored_img = img_res.scalars().first()
+            if stored_img:
+                image_bytes = stored_img.data
+        except Exception:
+            image_bytes = None
+
+    ai_scores = {}
+    if report.category == "road_issues":
+        from ai_analysis import analyze_pothole_report
+        ai_scores = await analyze_pothole_report(
+            image_url=report.image_url or "",
+            description=report.description or "",
+            latitude=to_shape(report.location).y if report.location is not None else 0.0,
+            longitude=to_shape(report.location).x if report.location is not None else 0.0,
+            upvotes=report.upvotes or 0,
+            image_bytes=image_bytes,
+        )
+        report.pothole_depth_score = ai_scores.get("pothole_depth_score")
+        report.pothole_spread_score = ai_scores.get("pothole_spread_score")
+    elif report.category == "waste_management":
+        from ai_analysis import analyze_garbage_report
+        ai_scores = await analyze_garbage_report(
+            image_url=report.image_url or "",
+            description=report.description or "",
+            latitude=to_shape(report.location).y if report.location is not None else 0.0,
+            longitude=to_shape(report.location).x if report.location is not None else 0.0,
+            upvotes=report.upvotes or 0,
+            image_bytes=image_bytes,
+        )
+        report.garbage_volume_score = ai_scores.get("garbage_volume_score")
+        report.garbage_waste_type_score = ai_scores.get("garbage_waste_type_score")
+    else:
+        raise HTTPException(status_code=400, detail="Report category not supported for reanalysis")
+
+    # Common fields
+    report.emotion_score = ai_scores.get("emotion_score")
+    report.location_score = ai_scores.get("location_score")
+    report.upvote_score = ai_scores.get("upvote_score")
+    report.ai_severity_score = ai_scores.get("ai_severity_score")
+    report.ai_severity_level = ai_scores.get("ai_severity_level")
+    report.location_meta = ai_scores.get("location_meta")
+    report.sentiment_meta = ai_scores.get("sentiment_meta")
+
+    await db.commit()
+    await db.refresh(report)
+    return report
+
 @router.post("/{report_id}/reopen", response_model=ReportResponse)
 async def reopen_report(
     report_id: int,
