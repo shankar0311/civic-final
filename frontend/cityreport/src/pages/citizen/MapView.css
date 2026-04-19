@@ -17,6 +17,35 @@
     position: relative;
 }
 
+/* Sidebar search input */
+.sidebar-search {
+    width: 100%;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--background);
+    color: var(--text-main);
+    margin-bottom: 0.75rem;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.sidebar-search:focus {
+    border-color: var(--primary);
+}
+
+/* Sidebar thumbnail */
+.sidebar-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+}
+
 .reports-list {
     display: flex;
     flex-direction: column;
@@ -39,6 +68,151 @@
 
 .map-popup {
     min-width: 200px;
+}
+
+/* ── Reports count badge ─────────────────────────────────── */
+.reports-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: var(--primary);
+    color: white;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* ── Status filter chips ─────────────────────────────────── */
+.map-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+}
+
+.map-filter-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1.5px solid var(--border);
+    background: var(--background);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.map-filter-chip .chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--chip-color, #ccc);
+    flex-shrink: 0;
+}
+
+.map-filter-chip.active {
+    border-color: var(--chip-color);
+    background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+    color: var(--text-main);
+}
+
+/* ── Popup ───────────────────────────────────────────────── */
+.map-popup { min-width: 190px; display: flex; flex-direction: column; gap: 6px; }
+.map-popup-title { font-weight: 700; font-size: 0.95rem; color: var(--text-main); margin: 0; }
+.map-popup-desc  { font-size: 0.82rem; color: var(--text-secondary); margin: 0; line-height: 1.4; }
+.map-popup-score { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+
+/* ── Floating map controls ───────────────────────────────── */
+.map-controls {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.map-ctrl-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.55rem 1rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.map-ctrl-btn:hover:not(:disabled) {
+    background: var(--background);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.map-ctrl-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.map-ctrl-btn--active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.map-ctrl-btn--active:hover:not(:disabled) {
+    background: var(--primary);
+    color: white;
+}
+
+/* Spinner for locate loading */
+.locate-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #ccc;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Toast notification */
+.map-toast {
+    position: absolute;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: #1e293b;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    animation: fadeInUp 0.2s ease;
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 /* Mobile Responsive */

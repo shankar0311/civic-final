@@ -1,11 +1,13 @@
-import { MapPin, ThumbsUp, MessageSquare, Trash2 } from 'lucide-react';
+import { MapPin, ThumbsUp, Trash2 } from 'lucide-react';
 import Card from '../shared/Card';
 import Badge from '../shared/Badge';
 import Button from '../shared/Button';
 import './ReportCard.css';
 import { getImageUrl } from '../../utils/image';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ReportCard = ({ report, onUpvote, onClick, onWithdraw, isOwner }) => {
+    const { user } = useAuth();
     const {
         id,
         title,
@@ -15,16 +17,29 @@ const ReportCard = ({ report, onUpvote, onClick, onWithdraw, isOwner }) => {
         image_url,
         imageUrl,
         upvotes,
-        commentsCount,
         createdAt,
         created_at
     } = report;
 
+    const upvoted = localStorage.getItem(`upvoted_${user?.id}_${id}`) === '1';
+
+    const displayCategory = category === 'road_issues' ? 'Road Issue' : category;
+
+
+    const STATUS_LABELS = {
+        pending: 'Pending',
+        in_progress: 'In Progress',
+        resolved: 'Resolved',
+        closed: 'Closed',
+        reopened: 'Reopened',
+    };
 
     const getStatusVariant = (status) => {
         switch (status.toLowerCase()) {
-            case 'resolved': return 'success';
-            case 'in progress': return 'warning';
+            case 'resolved':
+            case 'closed': return 'success';
+            case 'in_progress': return 'warning';
+            case 'reopened': return 'danger';
             case 'pending': return 'danger';
             default: return 'neutral';
         }
@@ -42,21 +57,20 @@ const ReportCard = ({ report, onUpvote, onClick, onWithdraw, isOwner }) => {
                         e.target.src = 'https://via.placeholder.com/400x200?text=Load+Error';
                     }}
                 />
-                <div className="report-category-badge">
-                    <Badge variant="neutral">{category}</Badge>
-                </div>
             </div>
 
             <div className="report-content p-md">
                 <div className="flex justify-between items-start mb-sm">
                     <h3 className="text-lg font-semibold report-title">{title}</h3>
-                    <Badge variant={getStatusVariant(status)}>{status}</Badge>
+                    <Badge variant={getStatusVariant(status)}>{STATUS_LABELS[status] || status}</Badge>
                 </div>
 
-                <div className="flex items-center text-muted text-sm mb-md">
-                    <MapPin size={14} className="mr-1" />
-                    <span className="truncate">{location}</span>
-                </div>
+                {location && (
+                    <div className="flex items-center text-muted text-sm mb-md">
+                        <MapPin size={14} className="mr-1" />
+                        <span className="truncate">{location}</span>
+                    </div>
+                )}
 
                 <div className="flex justify-between items-center mt-auto pt-sm border-t">
                     <div className="flex gap-md">
@@ -69,29 +83,22 @@ const ReportCard = ({ report, onUpvote, onClick, onWithdraw, isOwner }) => {
                                 onUpvote(id);
                             }}
                         >
-                            <ThumbsUp size={16} />
-                            <span>{upvotes}</span>
+                            <ThumbsUp size={20} style={{ color: upvoted ? 'var(--primary)' : undefined, fill: upvoted ? 'var(--primary)' : 'none' }} />
+                            <span style={{ color: upvoted ? 'var(--primary)' : undefined }}>{upvotes}</span>
                         </Button>
-
-                        <div className="flex items-center gap-xs text-muted text-sm">
-                            <MessageSquare size={16} />
-                            <span>{commentsCount}</span>
-                        </div>
 
                         {isOwner && (
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="action-btn text-danger hover:text-danger hover:bg-red-50"
+                                className="action-btn action-btn-delete"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    if (window.confirm("Are you sure you want to withdraw this report?")) {
-                                        onWithdraw(id);
-                                    }
+                                    onWithdraw(id);
                                 }}
                                 title="Withdraw Report"
                             >
-                                <Trash2 size={16} />
+                                <Trash2 size={20} />
                             </Button>
                         )}
                     </div>

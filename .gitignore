@@ -15,3 +15,14 @@ dist/
 
 # Local Docker config (created by tooling)
 .docker/
+
+# Virtual environments
+.venv/
+.venv-ml/
+venv/
+
+# ML artifacts
+ml/data/
+ml/runs/
+backend/models/road_detector/
+backend/models/road_severity/

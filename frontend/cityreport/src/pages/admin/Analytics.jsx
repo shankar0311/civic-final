@@ -94,7 +94,7 @@ const Analytics = () => {
             <main className="container py-lg">
                 <div className="mb-lg">
                     <h1 className="text-2xl mb-xs">Analytics Dashboard</h1>
-                    <p className="text-muted">Comprehensive insights and statistics</p>
+                    <p className="text-muted">Comprehensive insights for road-report operations</p>
                 </div>
 
                 {/* Summary Stats */}

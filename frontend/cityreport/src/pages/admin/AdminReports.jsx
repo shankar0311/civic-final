@@ -14,23 +14,20 @@ const AdminReports = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState('ai_severity_score');
-  const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
 
   useEffect(() => {
     fetchReports();
-  }, [sortBy, filterCategory, filterStatus]);
+  }, [sortBy, filterStatus]);
 
   const fetchReports = async () => {
     try {
       const params = new URLSearchParams({
         sort_by: sortBy,
-        sort_order: 'desc'
+        sort_order: 'desc',
+        category: 'road_issues'
       });
 
-      if (filterCategory !== 'all') {
-        params.append('category', filterCategory);
-      }
       if (filterStatus !== 'all') {
         params.append('status', filterStatus);
       }
@@ -64,9 +61,9 @@ const AdminReports = () => {
       <main className="container py-lg">
         <div className="admin-reports-header">
           <div>
-            <h1 className="text-2xl mb-xs">AI-Analyzed Reports</h1>
+            <h1 className="text-2xl mb-xs">Road Analysis Reports</h1>
             <p className="text-muted">
-              View and manage reports with AI severity analysis
+              View and manage road reports with local severity analysis
             </p>
           </div>
         </div>
@@ -90,22 +87,6 @@ const AdminReports = () => {
                 <option value="created_at">Date (Newest First)</option>
                 <option value="upvotes">Most Upvoted</option>
                 <option value="priority">Priority</option>
-              </select>
-            </div>
-
-            <div className="filter-group">
-              <label className="filter-label">
-                <Filter size={16} />
-                Category
-              </label>
-              <select
-                className="filter-select"
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-              >
-                <option value="all">All Categories</option>
-                <option value="road_issues">Road Issues</option>
-                <option value="waste_management">Waste Management</option>
               </select>
             </div>
 
@@ -144,7 +125,7 @@ const AdminReports = () => {
                   <div>
                     <h3 className="report-title">{report.title}</h3>
                     <div className="report-badges">
-                      <Badge variant="neutral">{report.category}</Badge>
+                      <Badge variant="neutral">ROAD ISSUE</Badge>
                       <Badge
                         variant={getSeverityColor(report.ai_severity_score)}
                       >
@@ -178,46 +159,22 @@ const AdminReports = () => {
                   <div className="ai-breakdown">
                     <h4 className="ai-breakdown-title">AI Analysis</h4>
                     <div className="ai-scores-grid">
-                      {(report.category === "pothole" || report.category === "road_issues") && (
-                        <>
-                          <div className="ai-score-item">
-                            <span className="ai-score-label">Depth</span>
-                            <span className="ai-score-value">
-                              {report.pothole_depth_score !== null && report.pothole_depth_score !== undefined
-                                ? `${Math.round(report.pothole_depth_score * 100)}%`
-                                : "N/A"}
-                            </span>
-                          </div>
-                          <div className="ai-score-item">
-                            <span className="ai-score-label">Spread</span>
-                            <span className="ai-score-value">
-                              {report.pothole_spread_score !== null && report.pothole_spread_score !== undefined
-                                ? `${Math.round(report.pothole_spread_score * 100)}%`
-                                : "N/A"}
-                            </span>
-                          </div>
-                        </>
-                      )}
-                      {(report.category === "garbage" || report.category === "waste_management") && (
-                        <>
-                          <div className="ai-score-item">
-                            <span className="ai-score-label">Volume</span>
-                            <span className="ai-score-value">
-                              {report.garbage_volume_score !== null && report.garbage_volume_score !== undefined
-                                ? `${Math.round(report.garbage_volume_score * 100)}%`
-                                : "N/A"}
-                            </span>
-                          </div>
-                          <div className="ai-score-item">
-                            <span className="ai-score-label">Hazard</span>
-                            <span className="ai-score-value">
-                              {report.garbage_waste_type_score !== null && report.garbage_waste_type_score !== undefined
-                                ? `${Math.round(report.garbage_waste_type_score * 100)}%`
-                                : "N/A"}
-                            </span>
-                          </div>
-                        </>
-                      )}
+                      <div className="ai-score-item">
+                        <span className="ai-score-label">Depth</span>
+                        <span className="ai-score-value">
+                          {report.pothole_depth_score !== null && report.pothole_depth_score !== undefined
+                            ? `${Math.round(report.pothole_depth_score * 100)}%`
+                            : "N/A"}
+                        </span>
+                      </div>
+                      <div className="ai-score-item">
+                        <span className="ai-score-label">Spread</span>
+                        <span className="ai-score-value">
+                          {report.pothole_spread_score !== null && report.pothole_spread_score !== undefined
+                            ? `${Math.round(report.pothole_spread_score * 100)}%`
+                            : "N/A"}
+                        </span>
+                      </div>
                       <div className="ai-score-item">
                         <span className="ai-score-label">Urgency</span>
                         <span className="ai-score-value">

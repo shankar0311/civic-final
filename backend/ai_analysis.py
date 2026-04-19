@@ -1,21 +1,25 @@
-import httpx
+import json
 import logging
+from io import BytesIO
+from pathlib import Path
 from typing import Dict, Optional
-import time
-import hashlib
+
+import numpy as np
+from PIL import Image
+from ml_models import road_model_suite
+from grok_analysis import (
+    analyze_with_grok,
+    query_nearby_pois,
+    query_traffic_density,
+    location_score_from_pois,
+    description_score,
+)
 
 logger = logging.getLogger("backend")
 
-import os
 
-# AI Service URLs
-POTHOLE_CHILD_URL = os.getenv("AI_POTHOLE_CHILD_URL", "http://ai-pothole-child:8001")
-POTHOLE_PARENT_URL = os.getenv("AI_POTHOLE_PARENT_URL", "http://ai-pothole-parent:8003")
-GARBAGE_CHILD_URL = os.getenv("AI_GARBAGE_CHILD_URL", "http://ai-garbage-child:8002")
-GARBAGE_PARENT_URL = os.getenv("AI_GARBAGE_PARENT_URL", "http://ai-garbage-parent:8004")
-
-
-_SERVICE_HEALTH_CACHE: dict[str, tuple[bool, float]] = {}
+def _clip01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def _severity_level_from_score(score: float) -> str:
@@ -28,76 +32,211 @@ def _severity_level_from_score(score: float) -> str:
     return "low"
 
 
-def _stable_unit_float(seed: str) -> float:
-    digest = hashlib.md5(seed.encode("utf-8")).digest()
-    value = int.from_bytes(digest[:8], "big")
-    return (value % 10_000_000) / 10_000_000.0
+def _load_local_image_bytes(image_url: str, image_bytes: Optional[bytes]) -> Optional[bytes]:
+    if image_bytes:
+        return image_bytes
+
+    if not image_url or not image_url.startswith("/uploads/"):
+        return None
+
+    file_path = Path("uploads") / image_url.replace("/uploads/", "")
+    if not file_path.exists():
+        logger.warning("Local upload not found for analysis: %s", file_path)
+        return None
+
+    return file_path.read_bytes()
 
 
-async def _is_service_healthy(url: str, client: httpx.AsyncClient, ttl_seconds: float = 10.0) -> bool:
-    now = time.time()
-    cached = _SERVICE_HEALTH_CACHE.get(url)
-    if cached and (now - cached[1]) <= ttl_seconds:
-        return cached[0]
-
-    try:
-        resp = await client.get(f"{url}/health", timeout=0.8)
-        ok = resp.status_code == 200
-    except Exception:
-        ok = False
-
-    _SERVICE_HEALTH_CACHE[url] = (ok, now)
-    return ok
-
-
-def _pothole_fallback_scores(description: str, latitude: float, longitude: float, upvotes: int) -> Dict:
+def _visual_scores_from_text(description: str) -> tuple[float, float, dict]:
     text = (description or "").lower()
-    seed = f"pothole|{description}|{latitude:.6f}|{longitude:.6f}|{upvotes}"
-    r = _stable_unit_float(seed)
 
-    depth_hint = 0.0
-    if any(k in text for k in ["deep", "6 inch", "6 inches", "8 inch", "8 inches"]):
-        depth_hint += 0.25
-    if any(k in text for k in ["huge", "massive", "very large", "danger"]):
-        depth_hint += 0.15
+    depth_terms = {
+        "deep": 0.28,
+        "crater": 0.32,
+        "sunken": 0.22,
+        "dangerous": 0.14,
+        "accident": 0.10,
+        "6 inch": 0.22,
+        "8 inch": 0.28,
+    }
+    spread_terms = {
+        "wide": 0.26,
+        "large": 0.18,
+        "huge": 0.24,
+        "massive": 0.28,
+        "2 feet": 0.20,
+        "3 feet": 0.26,
+        "lane": 0.12,
+        "multiple": 0.16,
+    }
 
-    spread_hint = 0.0
-    if any(k in text for k in ["wide", "large", "diameter", "2 feet", "2ft", "3 feet", "3ft"]):
-        spread_hint += 0.25
-    if any(k in text for k in ["intersection", "main road", "highway", "traffic"]):
-        spread_hint += 0.10
+    matched_depth = [term for term in depth_terms if term in text]
+    matched_spread = [term for term in spread_terms if term in text]
 
-    emotion_hint = 0.0
-    if any(k in text for k in ["urgent", "immediately", "asap", "critical", "emergency"]):
-        emotion_hint += 0.35
-    if any(k in text for k in ["danger", "accident", "injury"]):
-        emotion_hint += 0.35
+    depth_score = _clip01(0.18 + sum(depth_terms[term] for term in matched_depth))
+    spread_score = _clip01(0.20 + sum(spread_terms[term] for term in matched_spread))
 
-    upvote_score = min(max(upvotes, 0) / 100.0, 1.0)
-    location_score = 0.5
+    return depth_score, spread_score, {
+        "mode": "text-only",
+        "matched_depth_terms": matched_depth,
+        "matched_spread_terms": matched_spread,
+    }
 
-    depth_score = min(max(0.25 + depth_hint + (r * 0.15), 0.0), 1.0)
-    spread_score = min(max(0.30 + spread_hint + ((1 - r) * 0.20), 0.0), 1.0)
-    emotion_score = min(max(0.20 + emotion_hint + ((r * 0.10)), 0.0), 1.0)
 
-    severity = (
-        (spread_score * 0.3) +
-        (depth_score * 0.3) +
-        (emotion_score * 0.2) +
-        (location_score * 0.1) +
-        (upvote_score * 0.1)
-    ) * 100.0
+def _visual_scores_from_image(image_bytes: bytes, description: str) -> tuple[float, float, dict]:
+    try:
+        image = Image.open(BytesIO(image_bytes)).convert("L").resize((256, 256))
+    except Exception as exc:
+        logger.warning("Image decoding failed during road analysis: %s", exc)
+        depth_score, spread_score, meta = _visual_scores_from_text(description)
+        meta["image_available"] = False
+        meta["decode_failed"] = True
+        return depth_score, spread_score, meta
 
-    return {
-        "pothole_depth_score": round(depth_score, 3),
-        "pothole_spread_score": round(spread_score, 3),
-        "emotion_score": round(emotion_score, 3),
-        "location_score": round(location_score, 3),
-        "upvote_score": round(upvote_score, 3),
-        "ai_severity_score": round(max(0.0, min(100.0, severity)), 2),
-        "ai_severity_level": _severity_level_from_score(severity),
-        "location_meta": '{"mode":"fallback","source":"local-heuristics"}',
-        "sentiment_meta": '{"mode":"fallback","source":"local-heuristics"}',
+    gray = np.asarray(image, dtype=np.float32) / 255.0
+    center = gray[64:192, 64:192]
+    border = np.concatenate(
+        [
+            gray[:64, :].ravel(),
+            gray[192:, :].ravel(),
+            gray[64:192, :64].ravel(),
+            gray[64:192, 192:].ravel(),
+        ]
+    )
+
+    center_darkness = 1.0 - float(center.mean())
+    border_darkness = 1.0 - float(border.mean())
+    depression_score = _clip01((center_darkness - border_darkness + 0.10) / 0.45)
+
+    center_std = float(center.std())
+    texture_score = _clip01(center_std * 3.2)
+    edge_strength = (
+        float(np.abs(np.diff(center, axis=0)).mean()) +
+        float(np.abs(np.diff(center, axis=1)).mean())
+    ) / 2.0
+    edge_score = _clip01(edge_strength * 4.8)
+    dark_ratio = float(np.mean(center < 0.42))
+    shadow_ratio = float(np.mean(center < 0.30))
+
+    text_depth, text_spread, text_meta = _visual_scores_from_text(description)
+
+    spread_score = _clip01(
+        0.12 +
+        (dark_ratio * 0.42) +
+        (texture_score * 0.18) +
+        (edge_score * 0.14) +
+        (depression_score * 0.12)
+    )
+    depth_score = _clip01(
+        0.10 +
+        (depression_score * 0.42) +
+        (shadow_ratio * 0.18) +
+        (texture_score * 0.16) +
+        (edge_score * 0.10)
+    )
+
+    spread_score = _clip01(max(spread_score, text_spread * 0.8))
+    depth_score = _clip01(max(depth_score, text_depth * 0.8))
+
+    return depth_score, spread_score, {
+        "mode": "local-image-heuristic",
+        "image_available": True,
+        "features": {
+            "center_darkness": round(center_darkness, 3),
+            "border_darkness": round(border_darkness, 3),
+            "depression_score": round(depression_score, 3),
+            "texture_score": round(texture_score, 3),
+            "edge_score": round(edge_score, 3),
+            "dark_ratio": round(dark_ratio, 3),
+            "shadow_ratio": round(shadow_ratio, 3),
+        },
+        "text_support": text_meta,
+    }
+
+
+def _sentiment_score(description: str) -> tuple[float, dict]:
+    text = (description or "").lower()
+    weights = {
+        "urgent": 0.20,
+        "danger": 0.22,
+        "dangerous": 0.22,
+        "accident": 0.24,
+        "injury": 0.26,
+        "emergency": 0.28,
+        "critical": 0.28,
+        "immediately": 0.18,
+        "school bus": 0.20,
+        "vehicle damage": 0.16,
+        "night": 0.10,
+        "rain": 0.10,
+    }
+    matched = [term for term in weights if term in text]
+    score = _clip01(0.18 + sum(weights[term] for term in matched))
+    label = "urgent" if score >= 0.65 else "moderate" if score >= 0.35 else "routine"
+    return score, {
+        "mode": "local-keyword-analysis",
+        "label": label,
+        "keywords": matched,
+    }
+
+
+def _location_score(description: str, latitude: float, longitude: float) -> tuple[float, dict]:
+    text = (description or "").lower()
+    weights = {
+        "intersection": 0.18,
+        "main road": 0.16,
+        "highway": 0.22,
+        "junction": 0.14,
+        "bridge": 0.12,
+        "school": 0.18,
+        "hospital": 0.20,
+        "market": 0.10,
+        "bus": 0.08,
+        "traffic": 0.12,
+    }
+    matched = [term for term in weights if term in text]
+
+    has_coordinates = latitude is not None and longitude is not None
+    score = 0.22 + (0.05 if has_coordinates else 0.0) + sum(weights[term] for term in matched)
+
+    return _clip01(score), {
+        "mode": "local-road-context",
+        "geospatial_enrichment": False,
+        "matched_keywords": matched,
+        "coordinates_supplied": has_coordinates,
+        "latitude": latitude,
+        "longitude": longitude,
+    }
+
+
+def _visual_scores_from_models(image_bytes: bytes, description: str) -> tuple[Optional[float], Optional[float], dict]:
+    detector_result = road_model_suite.detect_damage(image_bytes)
+    if detector_result is None or detector_result.count == 0:
+        return None, None, {"mode": "model-unavailable"}
+
+    pothole_box = max(detector_result.boxes, key=lambda box: box.get("area_ratio", 0.0))
+    spread_score = _clip01((detector_result.max_area_ratio / 0.22) + min(detector_result.count, 4) * 0.05)
+
+    depth_result = road_model_suite.estimate_depth(image_bytes, pothole_box.get("xyxy"))
+    if depth_result is not None:
+        depth_score = depth_result.depth_score
+        depth_meta = {
+            "source": depth_result.source,
+            "raw_mean": round(depth_result.raw_mean, 4),
+        }
+    else:
+        depth_score, _, text_meta = _visual_scores_from_text(description)
+        depth_meta = {"source": "text-fallback", "text_support": text_meta}
+
+    return depth_score, spread_score, {
+        "mode": "model-assisted",
+        "detector": {
+            "source": detector_result.source,
+            "count": detector_result.count,
+            "max_area_ratio": round(detector_result.max_area_ratio, 4),
+            "boxes": detector_result.boxes[:10],
+        },
+        "depth": depth_meta,
     }
 
 
@@ -107,281 +246,132 @@ async def analyze_pothole_report(
     latitude: float,
     longitude: float,
     upvotes: int,
-    image_bytes: Optional[bytes] = None
+    image_bytes: Optional[bytes] = None,
+    citizen_severity: str = "medium",
 ) -> Dict:
-    """
-    Orchestrate pothole analysis pipeline:
-    1. Call child models for individual scores
-    2. Call parent model for final severity
-    """
-    try:
-        async with httpx.AsyncClient() as client:
-            # On low-resource machines, AI services may not be running.
-            # Avoid long retries/timeouts and return a lightweight fallback analysis instead.
-            child_ok = await _is_service_healthy(POTHOLE_CHILD_URL, client)
-            parent_ok = await _is_service_healthy(POTHOLE_PARENT_URL, client)
-            if not (child_ok and parent_ok):
-                return _pothole_fallback_scores(description, latitude, longitude, upvotes)
+    loaded_image = _load_local_image_bytes(image_url, image_bytes)
 
-            # Read image from local file system
-            # image_url is like "/uploads/filename.jpg"
-            from pathlib import Path
-            
-            # Convert URL path to file path
-            # Read image
-            # Read image
-            if image_bytes:
-                file_path = None
-            elif image_url.startswith("/uploads/"):
-                file_path = Path("uploads") / image_url.replace("/uploads/", "")
-                if file_path.exists():
-                    with open(file_path, 'rb') as f:
-                        image_bytes = f.read()
-                    file_path = None # Found locally
-                else:
-                    # Not found locally (could happen if DB switch happened mid-flight but unlikely)
-                    image_bytes = None
-            else:
-                # Fallback: try to fetch via HTTP if it's a full URL
-                img_resp = await client.get(image_url, timeout=10.0)
-                if img_resp.status_code != 200:
-                    raise Exception("Failed to fetch image")
-                image_bytes = img_resp.content
-                file_path = None
-            
-            # Read image bytes from file if local
-            if file_path and file_path.exists():
-                with open(file_path, 'rb') as f:
-                    image_bytes = f.read()
-            elif not file_path:
-                # Already fetched via HTTP above
-                pass
-            else:
-                raise Exception(f"Image file not found: {file_path}")
-            
-            # 1. Analyze Image (YOLO + Depth)
-            files = {'image': ('pothole.jpg', image_bytes, 'image/jpeg')}
-            img_analysis = await client.post(
-                f"{POTHOLE_CHILD_URL}/analyze_image",
-                files=files,
-                timeout=30.0
-            )
-            img_data = img_analysis.json()
-            spread_score = img_data.get('spread_score', 0.0)
-            depth_score = img_data.get('depth_score', 0.0)
-            
-            # 2. Analyze Sentiment
-            sentiment_resp = await client.post(
-                f"{POTHOLE_CHILD_URL}/analyze_sentiment",
-                json={"text": description},
-                timeout=5.0
-            )
-            sentiment_data = sentiment_resp.json()
-            emotion_score = sentiment_data.get('emotion_score', 0.0)
-            sentiment_meta = {
-                "keywords": sentiment_data.get('keywords', []),
-                "sentiment": sentiment_data.get('sentiment', 'UNKNOWN')
-            }
-            import json
-            
-            # 3. Analyze Location
-            location_resp = await client.post(
-                f"{POTHOLE_CHILD_URL}/analyze_location",
-                json={"latitude": latitude, "longitude": longitude},
-                timeout=10.0
-            )
-            location_data = location_resp.json()
-            location_score = location_data.get('location_score', 0.0)
-            location_meta = {
-                "nearby_critical_count": location_data.get('nearby_critical_count', 0),
-                "schools": location_data.get('schools_nearby', 0),
-                "hospitals": location_data.get('hospitals_nearby', 0),
-                "is_major_road": location_data.get('is_major_road', False),
-                "critical_names": location_data.get('critical_names', [])
-            }
-            
-            # 4. Normalize upvotes
-            upvote_score = min(upvotes / 100.0, 1.0)
-            
-            # 5. Call Parent Model
-            parent_resp = await client.post(
-                f"{POTHOLE_PARENT_URL}/predict",
-                json={
-                    "depth_score": depth_score,
-                    "spread_score": spread_score,
-                    "emotion_score": emotion_score,
-                    "location_score": location_score,
-                    "upvote_score": upvote_score
-                },
-                timeout=5.0
-            )
-            parent_data = parent_resp.json()
-            
-            return {
-                "pothole_depth_score": depth_score,
-                "pothole_spread_score": spread_score,
-                "emotion_score": emotion_score,
-                "location_score": location_score,
-                "upvote_score": upvote_score,
-                "ai_severity_score": parent_data['severity_score'],
-                "ai_severity_level": parent_data['severity_level'],
-                "location_meta": json.dumps(location_meta),
-                "sentiment_meta": json.dumps(sentiment_meta)
-            }
-    
-    except Exception as e:
-        logger.error(f"Pothole analysis failed: {e}")
-        return _pothole_fallback_scores(description, latitude, longitude, upvotes)
+    # Fetch OSM context (used by both Groq and heuristic paths)
+    has_coords = bool(latitude and longitude)
+    pois = await query_nearby_pois(latitude, longitude) if has_coords else {}
+    traffic_score, traffic_label = await query_traffic_density(latitude, longitude) if has_coords else (30.0, "unknown")
+    loc_score, poi_summary = location_score_from_pois(pois)
+    desc_sc = description_score(description, citizen_severity)
+    upvote_score = _clip01((upvotes or 0) / 25.0)
 
+    # --- Groq AHP vision path (primary) ---
+    groq_result = await analyze_with_grok(
+        image_bytes=loaded_image,
+        description=description,
+        citizen_severity=citizen_severity,
+        latitude=latitude,
+        longitude=longitude,
+        upvotes=upvotes,
+        pois=pois,
+        traffic_score=traffic_score,
+        traffic_label=traffic_label,
+    )
 
-async def analyze_garbage_report(
-    image_url: str,
-    description: str,
-    latitude: float,
-    longitude: float,
-    upvotes: int,
-    image_bytes: Optional[bytes] = None
-) -> Dict:
-    """
-    Hybrid Garbage Analysis Pipeline (7-Feature Vector)
-    """
-    try:
-        async with httpx.AsyncClient() as client:
-            # -- Image Loading Logic (Keeping existing) --
-            from pathlib import Path
-            file_path = None
-            if image_bytes:
-                pass
-            elif image_url.startswith("/uploads/"):
-                file_path = Path("uploads") / image_url.replace("/uploads/", "")
-                if file_path.exists():
-                    with open(file_path, 'rb') as f: image_bytes = f.read()
-            else:
-                 # Fetch remote
-                 try:
-                     resp = await client.get(image_url, timeout=5.0)
-                     if resp.status_code == 200: image_bytes = resp.content
-                 except: pass
-            
-            if not image_bytes and file_path and file_path.exists():
-                 with open(file_path, 'rb') as f: image_bytes = f.read()
+    if groq_result:
+        final_score = float(groq_result.get("final_severity_score", 50))
+        severity_level = groq_result.get("severity_level", _severity_level_from_score(final_score))
+        image_score = float(groq_result.get("image_score", 50))
 
-            if not image_bytes: raise Exception("No image data found")
-            
-            # --- 1. CHILD: VISUAL (YOLOv8 & CNN) ---
-            files = {'image': ('garbage.jpg', image_bytes, 'image/jpeg')}
-            
-            # A. Object & Coverage (YOLO)
-            # We need to seek(0) if re-using bytes potentially? HTTPX handles files usually ok.
-            # But let's act sequentially to be safe or re-construct files dict
-            yolo_resp = await client.post(f"{GARBAGE_CHILD_URL}/analyze_image", files=files, timeout=30.0)
-            yolo_data = yolo_resp.json()
-            
-            object_count = yolo_data.get('object_count', 0.0)
-            coverage_area = yolo_data.get('coverage_area', 0.0)
-            detailed_objects = yolo_data.get('detailed_stats', {}) # Capture the 15 object classes
-
-            # B. Scene Dirtiness (CNN) - Re-send image
-            files_scene = {'image': ('garbage.jpg', image_bytes, 'image/jpeg')}
-            scene_resp = await client.post(f"{GARBAGE_CHILD_URL}/analyze_scene", files=files_scene, timeout=10.0)
-            scene_data = scene_resp.json()
-            dirtiness_score = scene_data.get('dirtiness_score', 0.0)
-
-            # --- 2. CHILD: TEXT & RISK (NLP) ---
-            nlp_resp = await client.post(
-                f"{GARBAGE_CHILD_URL}/analyze_sentiment",
-                json={"text": description},
-                timeout=5.0
-            )
-            nlp_data = nlp_resp.json()
-            text_severity = nlp_data.get('emotion_score', 0.0)
-            
-            # COMBINED RISK LOGIC (Visal + Text)
-            # If "hazardous" items found OR text says "toxic"
-            text_risk = nlp_data.get('risk_factor', 0.0)
-            visual_risk = 1.0 if detailed_objects.get('hazardous', 0) > 0 else 0.0
-            
-            risk_factor = max(text_risk, visual_risk)
-            found_risks = nlp_data.get('found_risks', [])
-            if visual_risk > 0: found_risks.append("SHARP/TOXIC OBJECTS (Visual)")
-
-            # --- 3. CHILD: LOCATION ---
-            loc_resp = await client.post(
-                f"{GARBAGE_CHILD_URL}/analyze_location",
-                json={"latitude": latitude, "longitude": longitude},
-                timeout=10.0
-            )
-            loc_data = loc_resp.json()
-            # Mapping location_score to 'location_multiplier' concept
-            location_multiplier = loc_data.get('location_score', 0.0) 
-            location_meta = {
-                "nearby": loc_data.get('nearby_critical_count', 0),
-                "schools": loc_data.get('schools_nearby', 0),
-                "critical_names": loc_data.get('critical_names', []) # Added Specific Names
-            }
-
-            # --- 4. CHILD: SOCIAL ---
-            social_score = min(upvotes / 50.0, 1.0) # Normalize upvotes
-
-            # --- 5. PARENT MODEL (7 Inputs) ---
-            parent_payload = {
-                "object_count": object_count,
-                "coverage_area": coverage_area,
-                "dirtiness_score": dirtiness_score,
-                "location_multiplier": location_multiplier,
-                "text_severity": text_severity,
-                "social_score": social_score,
-                "risk_factor": risk_factor
-            }
-            
-            parent_resp = await client.post(f"{GARBAGE_PARENT_URL}/predict", json=parent_payload, timeout=5.0)
-            parent_data = parent_resp.json()
-            
-            # --- 6. RICH DETAILS FOR FRONTEND (ALL 21 FEATURES) ---
-            # We pack all the cool new stats into json structure
-            analysis_details = {
-                "features": parent_payload, # The 7 Model Inputs
-                "risks_detected": found_risks,
-                "model_version": "Hybrid-v1",
-                "yolo_objects": object_count,
-                "object_breakdown": detailed_objects, # The detailed class counts
-                "full_21_features": { 
-                    **detailed_objects,
-                    "risk_flags": len(found_risks), 
-                    "location_risk": location_multiplier,
-                    "social_urgency": social_score
-                }
-            }
-            import json
-
-            return {
-                # Legacy keys for DB compatibility (mapped roughly)
-                "garbage_volume_score": coverage_area, 
-                "garbage_waste_type_score": risk_factor, # Map risk to waste type slot
-                "emotion_score": text_severity,
-                "location_score": location_multiplier,
-                "upvote_score": social_score,
-                
-                # Main Results
-                "ai_severity_score": parent_data['severity_score'],
-                "ai_severity_level": parent_data['severity_level'],
-                
-                # Rich Metadata
-                "location_meta": json.dumps(location_meta),
-                "sentiment_meta": json.dumps(analysis_details) # Piggyback on sentiment_meta or create new column if possible. 
-                # User asked not to change schema too much, so we'll put it in sentiment_meta which is JSON
-            }
-
-    except Exception as e:
-        logger.error(f"Hybrid Garbage analysis failed: {e}")
-        return {
-            "ai_severity_score": 50.0,
-            "ai_severity_level": "medium",
-            "garbage_volume_score": 0.0,
-            "garbage_waste_type_score": 0.0,
-            "emotion_score": 0.0,
-            "location_score": 0.0,
-            "upvote_score": 0.0,
-            "location_meta": "{}",
-            "sentiment_meta": "{}" 
+        location_meta = {
+            "mode": "osm-overpass-ahp",
+            "geospatial_enrichment": True,
+            "coordinates_supplied": has_coords,
+            "latitude": latitude,
+            "longitude": longitude,
+            "location_score": loc_score,
+            "traffic_score": traffic_score,
+            "traffic_label": traffic_label,
+            "nearby_critical_places": poi_summary,
+            "nearby_pois": groq_result.get("_nearby_pois", {}),
         }
+        sentiment_meta = {
+            "source": "groq-vision-ahp",
+            "damage_type": groq_result.get("damage_type"),
+            "image_score": image_score,
+            "description_score": desc_sc,
+            "location_score": loc_score,
+            "traffic_score": traffic_score,
+            "upvote_score": round(upvote_score * 100),
+            "final_severity_score": final_score,
+            "explanation": groq_result.get("explanation"),
+            "priority": groq_result.get("priority"),
+            "confidence": groq_result.get("confidence"),
+        }
+
+        return {
+            "pothole_depth_score": round(image_score / 100.0 * 0.6, 3),
+            "pothole_spread_score": round(image_score / 100.0 * 0.8, 3),
+            "emotion_score": round(desc_sc / 100.0, 3),
+            "location_score": round(loc_score / 100.0, 3),
+            "upvote_score": round(upvote_score, 3),
+            "ai_severity_score": round(min(final_score, 100.0), 2),
+            "ai_severity_level": severity_level,
+            "location_meta": json.dumps(location_meta),
+            "sentiment_meta": json.dumps(sentiment_meta),
+        }
+
+    # --- Heuristic fallback (AHP weights, no Groq) ---
+    if loaded_image:
+        model_depth, model_spread, model_meta = _visual_scores_from_models(loaded_image, description)
+        if model_depth is not None and model_spread is not None:
+            depth_score, spread_score, visual_meta = model_depth, model_spread, model_meta
+        else:
+            depth_score, spread_score, visual_meta = _visual_scores_from_image(loaded_image, description)
+    else:
+        depth_score, spread_score, visual_meta = _visual_scores_from_text(description)
+        visual_meta["image_available"] = False
+
+    image_score_h = (depth_score * 0.5 + spread_score * 0.5) * 100.0
+
+    # AHP weights: image 0.40, location 0.20, traffic 0.20, upvote 0.10, desc 0.10
+    heuristic_severity = (
+        (image_score_h * 0.40) +
+        (loc_score * 0.20) +
+        (traffic_score * 0.20) +
+        (upvote_score * 100.0 * 0.10) +
+        (desc_sc * 0.10)
+    )
+
+    severity_features = [depth_score, spread_score, desc_sc / 100.0, loc_score / 100.0, upvote_score]
+    severity_model_prediction = road_model_suite.predict_severity(severity_features)
+    severity = severity_model_prediction.severity_score if severity_model_prediction else heuristic_severity
+
+    location_meta = {
+        "mode": "osm-overpass-heuristic",
+        "geospatial_enrichment": has_coords,
+        "coordinates_supplied": has_coords,
+        "latitude": latitude,
+        "longitude": longitude,
+        "location_score": loc_score,
+        "traffic_score": traffic_score,
+        "traffic_label": traffic_label,
+        "nearby_critical_places": poi_summary,
+        "nearby_pois": {k: [p["name"] for p in v[:3]] for k, v in pois.items()},
+    }
+    sentiment_meta = {
+        "source": severity_model_prediction.source if severity_model_prediction else "ahp-heuristic",
+        "image_score": round(image_score_h, 2),
+        "description_score": round(desc_sc, 2),
+        "location_score": round(loc_score, 2),
+        "traffic_score": round(traffic_score, 2),
+        "upvote_score": round(upvote_score * 100, 2),
+        "heuristic_severity": round(heuristic_severity, 2),
+        "visual_meta": visual_meta,
+    }
+
+    return {
+        "pothole_depth_score": round(depth_score, 3),
+        "pothole_spread_score": round(spread_score, 3),
+        "emotion_score": round(desc_sc / 100.0, 3),
+        "location_score": round(loc_score / 100.0, 3),
+        "upvote_score": round(upvote_score, 3),
+        "ai_severity_score": round(_clip01(severity / 100.0) * 100.0, 2),
+        "ai_severity_level": _severity_level_from_score(severity),
+        "location_meta": json.dumps(location_meta),
+        "sentiment_meta": json.dumps(sentiment_meta),
+    }

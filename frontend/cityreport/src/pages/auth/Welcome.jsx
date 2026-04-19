@@ -7,7 +7,7 @@ const Welcome = () => {
     return (
         <div className="container flex flex-col items-center justify-center h-full" style={{ minHeight: '100vh' }}>
             <div className="text-center mb-md">
-                <h1 className="text-2xl" style={{ color: 'var(--primary)', marginBottom: '1rem' }}>Citizen AI System</h1>
+                <h1 className="text-2xl" style={{ color: 'var(--primary)', marginBottom: '1rem' }}>Citizen Road Reporting</h1>
                 <p className="text-muted">Smart City Urban Issue Reporting Platform</p>
             </div>
 

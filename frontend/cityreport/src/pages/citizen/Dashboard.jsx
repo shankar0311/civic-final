@@ -1,12 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, FileText, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import api from '../../api';
 import Navbar from '../../components/shared/Navbar';
 import Button from '../../components/shared/Button';
 import ReportCard from '../../components/citizen/ReportCard';
 import FilterBar from '../../components/shared/FilterBar';
 import { useAuth } from '../../contexts/AuthContext';
+import './Dashboard.css';
+
+const SEVERITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 };
+
+const StatCard = ({ icon: Icon, label, value, color, onClick, active }) => (
+    <div
+        className="stat-card"
+        onClick={onClick}
+        style={{ cursor: onClick ? 'pointer' : undefined, outline: active ? `2px solid ${color}` : undefined, outlineOffset: 2 }}
+    >
+        <div className="stat-icon" style={{ background: color + '20', color }}>
+            <Icon size={22} />
+        </div>
+        <div>
+            <p className="stat-label">{label}</p>
+            <p className="stat-value">{value}</p>
+        </div>
+    </div>
+);
 
 const CitizenDashboard = () => {
     const navigate = useNavigate();
@@ -15,136 +34,139 @@ const CitizenDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [filters, setFilters] = useState({ category: '', status: '' });
+    const [filters, setFilters] = useState({ status: '' });
+    const [sortBy, setSortBy] = useState('newest');
 
     useEffect(() => {
-        fetchReports();
+        api.get('/reports/')
+            .then(({ data }) => setReports(data))
+            .catch(() => setError('Failed to load reports.'))
+            .finally(() => setLoading(false));
     }, []);
 
-    const fetchReports = async () => {
+    const handleUpvote = async (id) => {
+        const key = `upvoted_${user?.id}_${id}`;
+        const wasUpvoted = localStorage.getItem(key) === '1';
+        if (wasUpvoted) localStorage.removeItem(key);
+        else localStorage.setItem(key, '1');
         try {
-            setLoading(true);
-            const response = await api.get('/reports/');
-            setReports(response.data);
-            setError('');
-        } catch (err) {
-            console.error('Error fetching reports:', err);
-            setError('Failed to load reports. Please try again.');
-        } finally {
-            setLoading(false);
+            await api.post(`/reports/${id}/upvote`);
+            const { data } = await api.get('/reports/');
+            setReports(data);
+        } catch {
+            if (wasUpvoted) localStorage.setItem(key, '1');
+            else localStorage.removeItem(key);
         }
     };
 
     const handleWithdraw = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this report? This cannot be undone.')) return;
         try {
             await api.delete(`/reports/${id}`);
             setReports(prev => prev.filter(r => r.id !== id));
         } catch (err) {
-            console.error('Error withdrawing report:', err);
-            alert("Failed to withdraw report.");
+            const msg = err?.response?.data?.detail || 'Failed to delete report.';
+            alert(msg);
         }
     };
 
-    const handleSearch = (term) => {
-        setSearchTerm(term);
-        // Implement client-side filtering if needed, or API call
+    const stats = {
+        total:      reports.length,
+        pending:    reports.filter(r => r.status === 'pending').length,
+        inProgress: reports.filter(r => r.status === 'in_progress').length,
+        resolved:   reports.filter(r => ['resolved', 'closed'].includes(r.status)).length,
     };
 
-    const handleFilterChange = (type, value) => {
-        setFilters(prev => ({ ...prev, [type]: value }));
-    };
-
-    const handleSortChange = (value) => {
-        // Implement sort
-    };
-
-    const handleUpvote = async (id) => {
-        try {
-            await api.post(`/reports/${id}/upvote`);
-            fetchReports();
-        } catch (err) {
-            console.error('Error upvoting report:', err);
-        }
-    };
-
-    const handleReportClick = (id) => {
-        navigate(`/citizen/report/${id}`);
-    };
-
-    // Filter logic
-    const filteredReports = reports.filter(report => {
-        const matchesSearch = report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            report.description.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = filters.category ? report.category === filters.category : true;
-        const matchesStatus = filters.status ? report.status === filters.status : true;
-        return matchesSearch && matchesCategory && matchesStatus;
-    });
+    const filtered = useMemo(() => {
+        const f = reports.filter(r => {
+            const matchSearch =
+                r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (r.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const matchStatus = filters.status ? r.status === filters.status : true;
+            return matchSearch && matchStatus;
+        });
+        return [...f].sort((a, b) => {
+            if (sortBy === 'upvotes')  return (b.upvotes ?? 0) - (a.upvotes ?? 0);
+            if (sortBy === 'newest')   return new Date(b.created_at) - new Date(a.created_at);
+            if (sortBy === 'oldest')   return new Date(a.created_at) - new Date(b.created_at);
+            if (sortBy === 'severity') return (SEVERITY_ORDER[b.ai_severity_level] ?? 0) - (SEVERITY_ORDER[a.ai_severity_level] ?? 0);
+            return 0;
+        });
+    }, [reports, searchTerm, filters, sortBy]);
 
     return (
         <div className="min-h-screen bg-background">
             <Navbar />
 
             <main className="container py-lg">
-                {/* Hero / Action Section */}
+                {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-center mb-lg gap-md">
                     <div>
-                        <h1 className="text-2xl mb-xs">Welcome Back, Citizen</h1>
-                        <p className="text-muted">Report issues and track their progress in your city.</p>
+                        <h1 className="text-2xl mb-xs">Community Reports</h1>
+                        <p className="text-muted">All issues reported across the city.</p>
                     </div>
-                    <Button
-                        variant="primary"
-                        size="lg"
-                        icon={Plus}
-                        onClick={() => navigate('/citizen/report/new')}
-                    >
+                    <Button variant="primary" size="lg" icon={Plus} onClick={() => navigate('/citizen/report/new')}>
                         Report an Issue
                     </Button>
                 </div>
 
-                {/* Filters */}
+                {/* City-wide stats */}
+                <div className="stats-grid mb-lg">
+                    <StatCard icon={FileText}      label="Total Reports"  value={loading ? '—' : stats.total}      color="#6366f1"
+                        active={filters.status === ''}
+                        onClick={() => setFilters(prev => ({ ...prev, status: '' }))} />
+                    <StatCard icon={Clock}         label="Pending"        value={loading ? '—' : stats.pending}     color="#f59e0b"
+                        active={filters.status === 'pending'}
+                        onClick={() => setFilters(prev => ({ ...prev, status: prev.status === 'pending' ? '' : 'pending' }))} />
+                    <StatCard icon={AlertTriangle} label="In Progress"    value={loading ? '—' : stats.inProgress}  color="#3b82f6"
+                        active={filters.status === 'in_progress'}
+                        onClick={() => setFilters(prev => ({ ...prev, status: prev.status === 'in_progress' ? '' : 'in_progress' }))} />
+                    <StatCard icon={CheckCircle}   label="Resolved"       value={loading ? '—' : stats.resolved}    color="#10b981"
+                        active={filters.status === 'resolved'}
+                        onClick={() => setFilters(prev => ({ ...prev, status: prev.status === 'resolved' ? '' : 'resolved' }))} />
+                </div>
+
+                {/* Filter bar */}
                 <FilterBar
-                    onSearch={handleSearch}
-                    onFilterChange={handleFilterChange}
-                    onSortChange={handleSortChange}
+                    onSearch={setSearchTerm}
+                    onFilterChange={(type, value) => setFilters(prev => ({ ...prev, [type]: value }))}
+                    onSortChange={setSortBy}
                 />
 
-                {/* Error Message */}
                 {error && (
-                    <div style={{
-                        padding: '1rem',
-                        marginBottom: '1rem',
-                        backgroundColor: '#fee',
-                        color: '#c00',
-                        borderRadius: '0.5rem'
-                    }}>
+                    <div style={{ padding: '1rem', marginBottom: '1rem', background: '#fee', color: '#c00', borderRadius: '0.5rem' }}>
                         {error}
                     </div>
                 )}
 
-                {/* Loading State */}
-                {loading && (
-                    <div className="text-center py-lg">
-                        <p>Loading reports...</p>
-                    </div>
-                )}
-
-                {/* Reports Grid */}
-                {!loading && !error && (
+                {loading ? (
+                    <p className="text-center text-muted py-lg">Loading reports...</p>
+                ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-lg">
-                        {filteredReports.length > 0 ? (
-                            filteredReports.map(report => (
+                        {filtered.length > 0 ? (
+                            filtered.map(report => (
                                 <ReportCard
                                     key={report.id}
                                     report={report}
                                     onUpvote={handleUpvote}
-                                    onClick={handleReportClick}
+                                    onClick={(id) => navigate(`/citizen/report/${id}`)}
                                     onWithdraw={handleWithdraw}
-                                    isOwner={user && user.id === report.user_id}
+                                    isOwner={user && Number(user.id) === Number(report.user_id)}
                                 />
                             ))
                         ) : (
-                            <div className="col-span-full text-center py-lg">
-                                <p className="text-muted">No reports found via search/filter.</p>
+                            <div className="col-span-full text-center py-lg text-muted" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                                <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="10" y="20" width="60" height="48" rx="6" fill="#e0e7ff" />
+                                    <rect x="20" y="32" width="40" height="6" rx="3" fill="#a5b4fc" />
+                                    <rect x="20" y="44" width="28" height="6" rx="3" fill="#c7d2fe" />
+                                    <circle cx="56" cy="22" r="14" fill="#f0fdf4" stroke="#86efac" strokeWidth="2" />
+                                    <path d="M50 22l4 4 8-8" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                <div>
+                                    <p style={{ fontWeight: 500 }}>No reports match your search or filter.</p>
+                                    <p style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Try clearing filters or adjusting your search.</p>
+                                </div>
                             </div>
                         )}
                     </div>

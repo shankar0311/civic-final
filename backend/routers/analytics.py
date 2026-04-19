@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
+ROAD_FILTER = Report.category == "road_issues"
 
 @router.get("/status-distribution")
 async def get_status_distribution(
@@ -19,7 +20,7 @@ async def get_status_distribution(
     query = select(
         Report.status,
         func.count(Report.id).label('count')
-    ).group_by(Report.status)
+    ).where(ROAD_FILTER).group_by(Report.status)
     
     result = await db.execute(query)
     rows = result.all()
@@ -37,7 +38,7 @@ async def get_priority_distribution(
     query = select(
         Report.priority,
         func.count(Report.id).label('count')
-    ).group_by(Report.priority)
+    ).where(ROAD_FILTER).group_by(Report.priority)
     
     result = await db.execute(query)
     rows = result.all()
@@ -66,7 +67,8 @@ async def get_time_bound_stats(
             END as time_category,
             COUNT(*) as count
         FROM reports
-        WHERE status IN ('resolved', 'closed')
+        WHERE category = 'road_issues'
+        AND status IN ('resolved', 'closed')
         AND updated_at IS NOT NULL
         GROUP BY time_category
     """)
@@ -101,7 +103,8 @@ async def get_heatmap_data(
     if priority:
         conditions.append(f"priority = '{priority}'")
     
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    conditions.insert(0, "category = 'road_issues'")
+    where_clause = f"WHERE {' AND '.join(conditions)}"
     
     query = text(f"""
         SELECT 
@@ -146,7 +149,8 @@ async def get_trend_analysis(
             COUNT(*) as count,
             status
         FROM reports
-        WHERE created_at >= NOW() - INTERVAL '{days} days'
+        WHERE category = 'road_issues'
+        AND created_at >= NOW() - INTERVAL '{days} days'
         GROUP BY DATE(created_at), status
         ORDER BY date DESC
     """)
@@ -179,14 +183,14 @@ async def predictive_maintenance(
     # Query to find clusters of reports
     query = text("""
         SELECT 
-            category,
             COUNT(*) as count,
             AVG(ST_X(location::geometry)) as avg_lon,
             AVG(ST_Y(location::geometry)) as avg_lat,
             priority
         FROM reports
-        WHERE created_at > NOW() - INTERVAL '30 days'
-        GROUP BY category, priority
+        WHERE category = 'road_issues'
+        AND created_at > NOW() - INTERVAL '30 days'
+        GROUP BY priority
         HAVING COUNT(*) > 2
         ORDER BY count DESC, priority DESC
     """)
@@ -195,11 +199,11 @@ async def predictive_maintenance(
     hotspots = []
     for row in result:
         hotspots.append({
-            "category": row.category,
+            "category": "road_issues",
             "report_count": row.count,
             "location": {"lat": row.avg_lat, "lon": row.avg_lon},
             "priority": row.priority,
-            "recommendation": f"Schedule maintenance for {row.category} in this area."
+            "recommendation": "Schedule preventive road maintenance in this area."
         })
         
     return {"hotspots": hotspots}
@@ -210,30 +214,96 @@ async def get_summary_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """Get overall summary statistics"""
-    # Total reports
-    total_query = select(func.count(Report.id))
+    total_query = select(func.count(Report.id)).where(ROAD_FILTER)
     total_result = await db.execute(total_query)
     total_reports = total_result.scalar()
-    
-    # Pending reports
-    pending_query = select(func.count(Report.id)).where(Report.status == ReportStatus.pending)
+
+    pending_query = select(func.count(Report.id)).where(ROAD_FILTER, Report.status == ReportStatus.pending)
     pending_result = await db.execute(pending_query)
     pending_reports = pending_result.scalar()
-    
-    # Resolved reports
-    resolved_query = select(func.count(Report.id)).where(Report.status.in_([ReportStatus.resolved, ReportStatus.closed]))
+
+    resolved_query = select(func.count(Report.id)).where(
+        ROAD_FILTER,
+        Report.status.in_([ReportStatus.resolved, ReportStatus.closed]),
+    )
     resolved_result = await db.execute(resolved_query)
     resolved_reports = resolved_result.scalar()
-    
-    # Critical priority reports
-    critical_query = select(func.count(Report.id)).where(Report.priority == ReportPriority.critical)
+
+    critical_query = select(func.count(Report.id)).where(ROAD_FILTER, Report.priority == ReportPriority.critical)
     critical_result = await db.execute(critical_query)
     critical_reports = critical_result.scalar()
-    
+
     return {
         "total_reports": total_reports,
         "pending_reports": pending_reports,
         "resolved_reports": resolved_reports,
         "critical_reports": critical_reports,
         "resolution_rate": (resolved_reports / total_reports * 100) if total_reports > 0 else 0
+    }
+
+
+@router.get("/dashboard")
+async def get_dashboard_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Single endpoint for admin dashboard: stats + severity breakdown + monthly trends + user count"""
+
+    # ── Stats ──────────────────────────────────────────────────────────────
+    total_q   = await db.execute(select(func.count(Report.id)))
+    total     = total_q.scalar() or 0
+
+    resolved_q = await db.execute(
+        select(func.count(Report.id)).where(
+            Report.status.in_([ReportStatus.resolved, ReportStatus.closed])
+        )
+    )
+    resolved = resolved_q.scalar() or 0
+
+    users_q  = await db.execute(select(func.count(User.id)).where(User.role == UserRole.citizen))
+    users    = users_q.scalar() or 0
+
+    rate = round(resolved / total * 100) if total > 0 else 0
+
+    # ── Severity distribution (pie chart) ──────────────────────────────────
+    sev_q = await db.execute(
+        select(Report.ai_severity_level, func.count(Report.id).label("cnt"))
+        .where(Report.ai_severity_level.isnot(None))
+        .group_by(Report.ai_severity_level)
+    )
+    severity_dist = [{"name": row.ai_severity_level.capitalize(), "value": row.cnt} for row in sev_q.all()]
+
+    # fallback: use severity enum if no AI scores
+    if not severity_dist:
+        sev_q2 = await db.execute(
+            select(Report.severity, func.count(Report.id).label("cnt"))
+            .group_by(Report.severity)
+        )
+        severity_dist = [{"name": row.severity.value.capitalize(), "value": row.cnt} for row in sev_q2.all()]
+
+    # ── Monthly trends (last 6 months) ─────────────────────────────────────
+    monthly_q = await db.execute(text("""
+        SELECT
+            TO_CHAR(created_at, 'Mon') AS month,
+            EXTRACT(YEAR  FROM created_at) AS yr,
+            EXTRACT(MONTH FROM created_at) AS mo,
+            COUNT(*) AS total,
+            SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) AS resolved
+        FROM reports
+        WHERE created_at >= NOW() - INTERVAL '6 months'
+        GROUP BY month, yr, mo
+        ORDER BY yr, mo
+    """))
+    monthly = [
+        {"month": row.month, "reports": int(row.total), "resolved": int(row.resolved)}
+        for row in monthly_q.all()
+    ]
+
+    return {
+        "total_reports":    total,
+        "active_users":     users,
+        "resolved_reports": resolved,
+        "resolution_rate":  rate,
+        "severity_dist":    severity_dist,
+        "monthly_trends":   monthly,
     }

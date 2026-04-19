@@ -14,18 +14,18 @@ const OfficerDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('');
 
     useEffect(() => {
         fetchReports();
-    }, [filter, priorityFilter, categoryFilter]);
+    }, [filter, priorityFilter]);
 
     const fetchReports = async () => {
         try {
             setLoading(true);
             const params = {
                 sort_by: 'priority',
-                sort_order: 'desc'
+                sort_order: 'desc',
+                category: 'road_issues'
             };
 
             if (filter !== 'all') {
@@ -33,9 +33,6 @@ const OfficerDashboard = () => {
             }
             if (priorityFilter) {
                 params.priority = priorityFilter;
-            }
-            if (categoryFilter) {
-                params.category = categoryFilter;
             }
 
             const response = await api.get('/reports/', { params });
@@ -47,10 +44,21 @@ const OfficerDashboard = () => {
         }
     };
 
+    const updateStatus = async (id, newStatus) => {
+        try {
+            const { data } = await api.patch(`/reports/${id}/status`, null, { params: { new_status: newStatus } });
+            setReports(prev => prev.map(r => r.id === id ? { ...r, status: data.status } : r));
+        } catch (err) {
+            console.error('Status update failed:', err);
+            alert('Failed to update status.');
+        }
+    };
+
     const stats = {
         pending: reports.filter(r => r.status === 'pending').length,
         inProgress: reports.filter(r => r.status === 'in_progress').length,
         resolved: reports.filter(r => r.status === 'resolved' || r.status === 'closed').length,
+        reopened: reports.filter(r => r.status === 'reopened').length,
         critical: reports.filter(r => r.priority === 'critical').length
     };
 
@@ -63,6 +71,8 @@ const OfficerDashboard = () => {
             case 'assigned':
                 return 'warning';
             case 'pending':
+                return 'danger';
+            case 'reopened':
                 return 'danger';
             default:
                 return 'neutral';
@@ -91,7 +101,7 @@ const OfficerDashboard = () => {
             <div>
               <h1 className="text-2xl mb-xs">Officer Dashboard</h1>
               <p className="text-muted">
-                Manage assigned reports and update their status
+                Manage road-repair reports and update their status
               </p>
             </div>
           </div>
@@ -136,6 +146,18 @@ const OfficerDashboard = () => {
                 <p className="stat-value">{stats.critical}</p>
               </div>
             </Card>
+
+            <Card className="stat-card">
+              <div className="stat-icon pending" style={{ background: 'var(--danger-light, #fee2e2)' }}>
+                <AlertCircle size={24} style={{ color: 'var(--danger)' }} />
+              </div>
+              <div className="stat-content">
+                <p className="stat-label">Disputed</p>
+                <p className="stat-value" style={{ color: stats.reopened > 0 ? 'var(--danger)' : undefined }}>
+                  {stats.reopened}
+                </p>
+              </div>
+            </Card>
           </div>
 
           {/* Filter Panel */}
@@ -144,7 +166,7 @@ const OfficerDashboard = () => {
               <Filter size={20} />
               <h3 className="font-semibold">Filters</h3>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-md">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
               <div>
                 <label className="block text-sm font-medium mb-xs">
                   Priority
@@ -164,25 +186,6 @@ const OfficerDashboard = () => {
                   <option value="high">High</option>
                   <option value="medium">Medium</option>
                   <option value="low">Low</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-xs">
-                  Category
-                </label>
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "0.5rem",
-                    border: "1px solid var(--border)",
-                    borderRadius: "0.375rem",
-                  }}
-                >
-                  <option value="">All Categories</option>
-                  <option value="road_issues">Road Issues</option>
-                  <option value="waste_management">Waste Management</option>
                 </select>
               </div>
             </div>
@@ -210,6 +213,13 @@ const OfficerDashboard = () => {
                 >
                   In Progress
                 </button>
+                <button
+                  className={`filter-tab ${filter === "reopened" ? "active" : ""}`}
+                  onClick={() => setFilter("reopened")}
+                  style={stats.reopened > 0 ? { color: 'var(--danger)', fontWeight: 600 } : {}}
+                >
+                  Disputed {stats.reopened > 0 && `(${stats.reopened})`}
+                </button>
               </div>
             </div>
 
@@ -223,7 +233,6 @@ const OfficerDashboard = () => {
                   <thead>
                     <tr>
                       <th>Title</th>
-                      <th>Category</th>
                       <th>Priority</th>
                       <th>Status</th>
                       <th>Created Date</th>
@@ -234,8 +243,14 @@ const OfficerDashboard = () => {
                   <tbody>
                     {reports.map((report) => (
                       <tr key={report.id}>
-                        <td className="font-semibold">{report.title}</td>
-                        <td>{report.category}</td>
+                        <td>
+                          <span className="font-semibold">{report.title}</span>
+                          {report.status === 'reopened' && report.citizen_feedback && (
+                            <p className="text-xs text-danger mt-xs" style={{ maxWidth: 240 }}>
+                              Dispute: "{report.citizen_feedback}"
+                            </p>
+                          )}
+                        </td>
                         <td>
                           <Badge variant={getPriorityVariant(report.priority)}>
                             {report.priority}
@@ -251,14 +266,29 @@ const OfficerDashboard = () => {
                         </td>
                         <td>{report.upvotes}</td>
                         <td>
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              navigate(`/officer/report/${report.id}`)
-                            }
-                          >
-                            Manage
-                          </Button>
+                          <div className="flex gap-xs flex-wrap">
+                            {report.status === 'pending' && (
+                              <Button size="sm" variant="warning"
+                                onClick={() => updateStatus(report.id, 'in_progress')}>
+                                Start
+                              </Button>
+                            )}
+                            {report.status === 'reopened' && (
+                              <Button size="sm" variant="warning"
+                                onClick={() => updateStatus(report.id, 'in_progress')}>
+                                Investigate
+                              </Button>
+                            )}
+                            {(report.status === 'pending' || report.status === 'in_progress' || report.status === 'reopened') && (
+                              <Button size="sm" variant="success"
+                                onClick={() => updateStatus(report.id, 'resolved')}>
+                                Resolve
+                              </Button>
+                            )}
+                            {report.status === 'resolved' && (
+                              <span className="text-xs text-muted" style={{lineHeight:'2rem'}}>Resolved ✓</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

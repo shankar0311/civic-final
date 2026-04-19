@@ -60,3 +60,13 @@
     background-color: transparent;
     color: var(--primary);
 }
+
+.action-btn-delete {
+    color: var(--text-secondary);
+    transition: color 0.15s, background-color 0.15s;
+}
+
+.action-btn-delete:hover {
+    color: var(--danger) !important;
+    background-color: transparent !important;
+}

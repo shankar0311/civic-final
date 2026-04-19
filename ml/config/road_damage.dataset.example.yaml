@@ -1,0 +1,10 @@
+path: ml/data/road_damage
+train: images/train
+val: images/val
+
+names:
+  0: pothole
+  1: longitudinal_crack
+  2: transverse_crack
+  3: alligator_crack
+  4: edge_break

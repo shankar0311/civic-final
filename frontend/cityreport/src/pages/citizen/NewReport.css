@@ -105,6 +105,34 @@
     opacity: 0.8;
 }
 
+.submit-loading-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    border-radius: var(--radius-md);
+    color: var(--primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.submit-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: submit-spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes submit-spin {
+    to { transform: rotate(360deg); }
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;

@@ -1,13 +1,11 @@
-# Citizen AI System
+# Citizen Road Reporting System
 
-A full-stack Citizen Issue Reporting & Management System with AI capabilities.
+A full-stack road-issue reporting and triage system focused on potholes and surface damage.
 
 ## Features
 - **Backend**: FastAPI, SQLAlchemy (Async), PostGIS (Spatial), pgvector (Embeddings).
 - **Frontend**: React (Vite), TailwindCSS, Leaflet Maps.
-- **AI Services**:
-  - `ai-duplicate`: Duplicate detection using Sentence Transformers.
-  - `ai-llm`: Summarization and Text-to-SQL using OpenAI/LLMs.
+- **Road Analysis**: Deterministic local image, text, and location scoring for road severity.
 - **Infrastructure**: Docker Compose, Nginx, Render Deployment.
 
 ## Prerequisites
@@ -24,7 +22,7 @@ A full-stack Citizen Issue Reporting & Management System with AI capabilities.
    ```
 
 2. **Environment Setup**
-   Copy `.env.example` to `.env` in `backend/` and `ai-llm/`.
+   Copy `.env.example` to `.env` in `backend/`.
    ```bash
    cp backend/.env.example backend/.env
    # Edit backend/.env to set your secrets
@@ -37,13 +35,7 @@ A full-stack Citizen Issue Reporting & Management System with AI capabilities.
    This starts the core stack:
    - Frontend: http://localhost:3005
    - Backend: http://localhost:8005
-   - Postgres: localhost:5432
-
-   To also build/run the (optional) AI services, run:
-   ```bash
-   docker compose --profile ai up --build
-   ```
-   AI services are heavy (PyTorch / transformers) and are disabled by default.
+   - Postgres: localhost:5433
 
 4. **Seed Data**
    To populate the database with synthetic reports:
@@ -67,13 +59,29 @@ npm install
 npm run dev
 ```
 
+## Model Training
+
+The repo now includes a model-training workspace under `ml/` for:
+
+- YOLO road-damage detection
+- optional depth-model integration
+- optional learned severity scoring
+
+Start with:
+
+```bash
+pip install -r backend/requirements-ml.txt
+python ml/training/train_detector.py --data ml/config/road_damage.dataset.example.yaml
+```
+
+See [`ml/README.md`](/Users/shreyas/Documents/New%20project/hotspot-prioritizer/ml/README.md) for the full step-by-step flow.
+
 ## Deployment (Render)
 
 1. Connect your GitHub repository to Render.
 2. Create a **Blueprint** using `render.yaml`.
 3. Set the `OPENAI_API_KEY` environment variable in the Render dashboard.
-4. Ensure the Postgres database is provisioned with PostGIS and pgvector extensions.
-   - You may need to run `CREATE EXTENSION vector;` manually if the image doesn't auto-enable it, but `ankane/pgvector` should handle it.
+4. Ensure the Postgres database is provisioned with PostGIS enabled.
 
 ## API Documentation
 - Swagger UI: http://localhost:8005/docs

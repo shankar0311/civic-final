@@ -1,67 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Calendar, ThumbsUp, MessageSquare, Send } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, MapPin, Calendar, ThumbsUp, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
 import Navbar from '../../components/shared/Navbar';
 import Button from '../../components/shared/Button';
 import Card from '../../components/shared/Card';
 import Badge from '../../components/shared/Badge';
 import AIAnalysisCard from '../../components/AIAnalysisCard';
+import { useAuth } from '../../contexts/AuthContext';
 import './ReportDetail.css';
 import { getImageUrl } from '../../utils/image';
 import api from '../../api';
 
-const MOCK_REPORT = {
-  id: 1,
-  title: 'Pothole on Main Street',
-  category: 'Road Issues',
-  location: '123 Main St, Downtown',
-  status: 'In Progress',
-  severity: 'Medium',
-  priority: 'High',
-  description: 'Large pothole causing traffic issues. Approximately 2 feet in diameter and 6 inches deep. Located near the intersection with Park Avenue.',
-  imageUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=800',
-  upvotes: 12,
-  createdAt: '2023-11-20T10:00:00Z',
-  updatedAt: '2023-11-21T14:30:00Z',
-  reporter: 'John Doe',
-  assignedTo: 'Roads Department',
-  comments: [
-    { id: 1, user: 'Jane Smith', text: 'This is a serious issue, thanks for reporting!', createdAt: '2023-11-20T12:00:00Z' },
-    { id: 2, user: 'Roads Dept', text: 'We have assigned a crew to fix this. Expected completion: 2 days.', createdAt: '2023-11-21T09:00:00Z' }
-  ]
-};
-
 const ReportDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [comment, setComment] = useState('');
-  const [upvoted, setUpvoted] = useState(false);
+  const location = useLocation();
+  const { user } = useAuth();
 
+  const [report, setReport]           = useState(null);
+  const [loading, setLoading]         = useState(true);
+  const [upvoted, setUpvoted]         = useState(false);
+  const [geoAddress, setGeoAddress]   = useState('');
+  const [disputeText, setDisputeText] = useState('');
+  const [showDispute, setShowDispute] = useState(false);
+  const [showReopenForm, setShowReopenForm] = useState(false);
+  const [reopenText, setReopenText]   = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Re-fetch whenever the URL (including navigation state) changes so
+  // clicking a notification for the same report always shows fresh data.
   useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get(`/reports/${id}`);
-        setReport(response.data);
-      } catch (error) {
-        console.error("Error fetching report:", error);
-        // Fallback to mock if API fails for #1
-        if (id === "1") setReport(MOCK_REPORT);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
-  }, [id]);
+    setLoading(true);
+    setReport(null);
+    setGeoAddress('');
+    api.get(`/reports/${id}`)
+      .then(({ data }) => {
+        setReport(data);
+        // Restore upvote state from localStorage
+        const key = `upvoted_${user?.id}_${data.id}`;
+        setUpvoted(localStorage.getItem(key) === '1');
+        // Reverse geocode coordinates
+        if (data.latitude && data.longitude) {
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${data.latitude}&lon=${data.longitude}`, {
+            headers: { 'Accept-Language': 'en' },
+          })
+            .then(r => r.json())
+            .then(geo => setGeoAddress(geo.display_name || ''))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [id, location.key]);
 
   if (loading) return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="container py-xl text-center">
-        <p className="text-muted">Loading report details...</p>
-      </div>
+      <div className="container py-xl text-center"><p className="text-muted">Loading report details...</p></div>
     </div>
   );
 
@@ -75,63 +70,197 @@ const ReportDetail = () => {
     </div>
   );
 
-  const getStatusVariant = (status = '') => {
-    switch (status.toLowerCase()) {
-      case 'resolved': return 'success';
-      case 'in progress':
-      case 'in_progress': return 'warning';
-      case 'pending': return 'danger';
-      default: return 'neutral';
-    }
+  const isOwner = user && Number(user.id) === Number(report.user_id);
+
+  const getStatusVariant = (s = '') => {
+    if (s === 'resolved' || s === 'closed') return 'success';
+    if (s === 'in_progress') return 'warning';
+    if (s === 'reopened') return 'danger';
+    if (s === 'pending') return 'danger';
+    return 'neutral';
   };
+
+  const statusLabel = (s = '') => ({
+    pending: 'Pending', in_progress: 'In Progress',
+    resolved: 'Resolved', closed: 'Closed', reopened: 'Reopened',
+  }[s] || s);
 
   const handleUpvote = async () => {
+    const newUpvoted = !upvoted;
+    const newCount = newUpvoted ? report.upvotes + 1 : report.upvotes - 1;
+    setUpvoted(newUpvoted);
+    setReport(prev => ({ ...prev, upvotes: newCount }));
+    const key = `upvoted_${user?.id}_${report.id}`;
+    if (newUpvoted) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
     try {
-      // Optimistic update
-      const originalUpvotes = report.upvotes;
-      const originalUpvoted = upvoted;
-
-      setReport(prev => ({
-        ...prev,
-        upvotes: upvoted ? prev.upvotes - 1 : prev.upvotes + 1
-      }));
-      setUpvoted(!upvoted);
-
-      // API Call using axios interceptor if auth configured, else raw axios
-      // Assuming no auth header needed for public upvote or using global config
-      // But typically needs token. For now checking if we have token logic in axios.
-      // If not, we might fail. But let's assume global axios defaults or public.
-
-      // Ideally should use an authenticated axios instance
-      const token = localStorage.getItem('token');
-      const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-
-      await api.post(`/reports/${report.id}/upvote`, {}, config);
-
-    } catch (error) {
-      console.error("Upvote failed:", error);
-      // Revert on failure
-      const revertedUpvoted = !upvoted; // wait, closure issue. 
-      // Safest to just refetch or rely on next page load. 
-      // But let's notify user
-      alert("Failed to register vote. Please log in.");
+      const { data } = await api.post(`/reports/${report.id}/upvote`);
+      setReport(prev => ({ ...prev, upvotes: data.upvotes ?? prev.upvotes }));
+    } catch {
+      setUpvoted(upvoted);
+      setReport(prev => ({ ...prev, upvotes: report.upvotes }));
+      if (upvoted) localStorage.setItem(key, '1');
+      else localStorage.removeItem(key);
     }
   };
 
-  const handleCommentSubmit = async (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
+  const handleVerify = async () => {
+    if (!window.confirm('Confirm that this issue has been resolved and close the report?')) return;
+    setActionLoading(true);
+    try {
+      const { data } = await api.post(`/reports/${id}/verify`);
+      setReport(data);
+    } catch {
+      alert('Failed to verify. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-    // Placeholder for comment submission logic
-    console.log("Submitting comment:", comment);
-    setComment('');
-    alert("Comments feature coming soon!");
+  const handleDispute = async () => {
+    if (!disputeText.trim()) { alert('Please describe why the issue is not resolved.'); return; }
+    setActionLoading(true);
+    try {
+      const { data } = await api.post(`/reports/${id}/reopen`, null, { params: { feedback: disputeText } });
+      setReport(data);
+      setShowDispute(false);
+      setDisputeText('');
+    } catch {
+      alert('Failed to submit dispute. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to permanently delete this report? This cannot be undone.')) return;
+    setActionLoading(true);
+    try {
+      await api.delete(`/reports/${id}`);
+      navigate('/citizen/reports');
+    } catch {
+      alert('Failed to delete report.');
+      setActionLoading(false);
+    }
+  };
+
+  const handleReopen = async (feedback) => {
+    if (!feedback.trim()) { alert('Please explain why you want to reopen this report.'); return; }
+    setActionLoading(true);
+    try {
+      const { data } = await api.post(`/reports/${id}/reopen`, null, { params: { feedback } });
+      setReport(data);
+      setShowReopenForm(false);
+      setReopenText('');
+    } catch {
+      alert('Failed to reopen. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <main className="container py-lg">
+
+        {/* Back + title row */}
+        <div className="flex items-center gap-md mb-lg">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => navigate(-1)}>Back</Button>
+          <div className="flex-1">
+            <div className="flex items-center gap-sm flex-wrap">
+              <h1 className="text-2xl font-bold">{report.title}</h1>
+              <Badge variant={getStatusVariant(report.status)}>{statusLabel(report.status)}</Badge>
+            </div>
+          </div>
+        </div>
+
+        {/* Owner action banner */}
+        {isOwner && report.status === 'resolved' && (
+          <div className="owner-action-banner mb-lg">
+            <div className="banner-content">
+              <CheckCircle size={20} className="banner-icon" />
+              <div>
+                <p className="banner-title">This report has been marked as resolved</p>
+                <p className="banner-sub">Please confirm if the issue has actually been fixed.</p>
+              </div>
+            </div>
+            <div className="banner-actions">
+              {!showDispute ? (
+                <>
+                  <Button variant="primary" size="sm" onClick={handleVerify} disabled={actionLoading}>
+                    ✓ Verify &amp; Close
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowDispute(true)} disabled={actionLoading}>
+                    Not Resolved? Dispute
+                  </Button>
+                </>
+              ) : (
+                <div className="dispute-form">
+                  <textarea
+                    className="form-control dispute-textarea"
+                    placeholder="Describe why the issue is still not resolved..."
+                    value={disputeText}
+                    onChange={(e) => setDisputeText(e.target.value)}
+                    rows={3}
+                  />
+                  <div className="flex gap-sm justify-end mt-sm">
+                    <Button variant="ghost" size="sm" onClick={() => { setShowDispute(false); setDisputeText(''); }}>
+                      Cancel
+                    </Button>
+                    <Button variant="danger" size="sm" icon={AlertTriangle} onClick={handleDispute} disabled={actionLoading}>
+                      Submit Dispute
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isOwner && report.status === 'reopened' && (
+          <div className="owner-action-banner banner-warning mb-lg">
+            <AlertTriangle size={20} className="banner-icon" />
+            <p className="banner-title">Your dispute has been submitted. Officers will review it.</p>
+          </div>
+        )}
+
+        {isOwner && report.status === 'closed' && (
+          <div className="owner-action-banner banner-success mb-lg">
+            <div className="banner-content">
+              <CheckCircle size={20} className="banner-icon" />
+              <div>
+                <p className="banner-title">Report closed. Thank you for helping improve the city!</p>
+                <p className="banner-sub">If this was closed by mistake, you can reopen it.</p>
+              </div>
+            </div>
+            <div className="banner-actions">
+              {!showReopenForm ? (
+                <Button variant="outline" size="sm" onClick={() => setShowReopenForm(true)} disabled={actionLoading}>
+                  Reopen Report
+                </Button>
+              ) : (
+                <div className="dispute-form">
+                  <textarea
+                    className="form-control dispute-textarea"
+                    placeholder="Why are you reopening this report?"
+                    value={reopenText}
+                    onChange={(e) => setReopenText(e.target.value)}
+                    rows={3}
+                  />
+                  <div className="flex gap-sm justify-end mt-sm">
+                    <Button variant="ghost" size="sm" onClick={() => { setShowReopenForm(false); setReopenText(''); }}>
+                      Cancel
+                    </Button>
+                    <Button variant="danger" size="sm" icon={AlertTriangle} onClick={() => handleReopen(reopenText)} disabled={actionLoading}>
+                      Confirm Reopen
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="report-detail-container">
           <div className="report-detail-main">
@@ -141,71 +270,51 @@ const ReportDetail = () => {
                   src={getImageUrl(report.image_url || report.imageUrl)}
                   alt={report.title}
                   className="report-detail-image"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = 'https://via.placeholder.com/800x400?text=Load+Error';
-                  }}
+                  onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/800x400?text=No+Image'; }}
                 />
               </div>
               <div className="p-lg">
                 <h3 className="mb-sm">Description</h3>
-                <p className="report-description text-secondary">
-                  {report.description || 'No description provided.'}
-                </p>
+                <p className="report-description text-secondary">{report.description || 'No description provided.'}</p>
               </div>
             </Card>
 
-            <Card className="mb-lg">
-              <h3 className="mb-md flex items-center gap-sm">
-                <MessageSquare size={20} />
-                Comments
-              </h3>
-
-              <form className="comment-form" onSubmit={handleCommentSubmit}>
-                <textarea
-                  className="form-control"
-                  placeholder="Add a comment..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  rows="3"
-                />
-                <div className="flex justify-end">
-                  <Button type="submit" variant="primary" icon={Send}>Post Comment</Button>
-                </div>
-              </form>
-
-              <div className="comments-list mt-lg">
-                {(report.comments && report.comments.length > 0) ? report.comments.map(c => (
-                  <div key={c.id} className="comment-item">
-                    <div className="comment-header">
-                      <span className="font-bold">{c.user || 'Anonymous'}</span>
-                      <span className="text-xs text-muted">{new Date(c.createdAt || c.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <p className="comment-text">{c.text || c.content}</p>
-                  </div>
-                )) : (
-                  <p className="text-muted text-center py-md">No comments yet.</p>
-                )}
-              </div>
-            </Card>
+            <AIAnalysisCard report={report} />
           </div>
 
           <div className="report-detail-sidebar">
-            <AIAnalysisCard report={report} />
-
-            <Card className="mt-lg">
+            <Card className="mb-md">
               <h3 className="mb-md">Report Details</h3>
               <div className="info-list">
                 <div className="info-item">
-                  <span className="info-label">Category</span>
-                  <span className="info-value">{report.category?.replace('_', ' ') || 'General'}</span>
+                  <span className="info-label">Status</span>
+                  <Badge variant={getStatusVariant(report.status)}>{statusLabel(report.status)}</Badge>
                 </div>
                 <div className="info-item">
+                  <span className="info-label">Category</span>
+                  <span className="info-value">{report.category?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'General'}</span>
+                </div>
+                <div className="info-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
                   <span className="info-label">Location</span>
+                  {report.latitude && report.longitude && (
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${report.latitude}&mlon=${report.longitude}&zoom=16`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'block', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', lineHeight: 0 }}
+                    >
+                      <img
+                        src={`https://staticmap.openstreetmap.de/staticmap.php?center=${report.latitude},${report.longitude}&zoom=15&size=260x120&markers=${report.latitude},${report.longitude},red-pushpin`}
+                        alt="Map preview"
+                        style={{ width: '100%', display: 'block' }}
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    </a>
+                  )}
                   <div className="flex items-start gap-xs">
-                    <MapPin size={16} className="text-muted mt-xs" />
-                    <span className="info-value">
-                      {report.location || `${report.latitude?.toFixed(4)}, ${report.longitude?.toFixed(4)}`}
+                    <MapPin size={14} className="text-muted" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span className="info-value text-sm">
+                      {geoAddress || report.location || `${report.latitude?.toFixed(5)}, ${report.longitude?.toFixed(5)}`}
                     </span>
                   </div>
                 </div>
@@ -218,12 +327,39 @@ const ReportDetail = () => {
                 </div>
                 <div className="info-item">
                   <span className="info-label">Priority</span>
-                  <Badge variant={report.priority === 'high' || report.priority === 'critical' ? 'danger' : 'neutral'}>
+                  <Badge variant={
+                    ['high','critical'].includes(report.priority) ? 'danger' :
+                    report.priority === 'low' ? 'success' : 'neutral'
+                  }>
                     {report.priority?.toUpperCase() || 'MEDIUM'}
                   </Badge>
                 </div>
+                <div className="info-item">
+                  <span className="info-label">Upvotes</span>
+                  <button className="upvote-btn" onClick={handleUpvote}>
+                    <ThumbsUp size={15} className={upvoted ? 'upvoted' : ''} />
+                    <span>{report.upvotes ?? 0}</span>
+                  </button>
+                </div>
               </div>
             </Card>
+
+            {/* Owner: delete */}
+            {isOwner && !['closed'].includes(report.status) && (
+              <Card>
+                <h3 className="mb-md text-sm font-semibold">Manage Report</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Trash2}
+                  onClick={handleDelete}
+                  disabled={actionLoading}
+                  style={{ width: '100%', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                >
+                  Delete Report
+                </Button>
+              </Card>
+            )}
           </div>
         </div>
       </main>

@@ -1,8 +1,0 @@
-requests
-fastapi
-uvicorn
-pydantic
-python-multipart
-pillow
-numpy
-

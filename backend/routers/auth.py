@@ -166,4 +166,5 @@ async def google_callback(code: str, db: AsyncSession = Depends(get_db)):
         
         # 5. Redirect to frontend with token
         # We redirect to a special frontend route that will handle storing the token
-        return RedirectResponse(url=f"http://localhost:3005/auth/callback?token={jwt_token}&role={user.role.value}&email={user.email}&name={user.name}")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(url=f"{frontend_url}/auth/callback?token={jwt_token}&role={user.role.value}&email={user.email}&name={user.name}")

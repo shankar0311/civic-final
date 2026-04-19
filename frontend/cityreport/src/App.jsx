@@ -13,6 +13,7 @@ import CitizenDashboard from './pages/citizen/Dashboard';
 import NewReport from './pages/citizen/NewReport';
 import MapView from './pages/citizen/MapView';
 import ReportDetail from './pages/citizen/ReportDetail';
+import MyReports from './pages/citizen/MyReports';
 
 // Officer Pages
 import OfficerDashboard from './pages/officer/Dashboard';
@@ -59,7 +60,7 @@ function App() {
                   <Route path="report/new" element={<NewReport />} />
                   <Route path="report/:id" element={<ReportDetail />} />
                   <Route path="map" element={<MapView />} />
-                  <Route path="reports" element={<CitizenDashboard />} />
+                  <Route path="reports" element={<MyReports />} />
                 </Routes>
               </ProtectedRoute>
             }

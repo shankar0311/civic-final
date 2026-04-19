@@ -53,7 +53,7 @@ class FieldTeamResponse(BaseModel):
 class ReportBase(BaseModel):
     title: str
     description: str
-    category: str
+    category: str = "road_issues"
     latitude: float
     longitude: float
     image_url: Optional[str] = None
@@ -83,11 +83,7 @@ class ReportResponse(BaseModel):
     # AI Scores - Pothole Domain
     pothole_depth_score: Optional[float] = None
     pothole_spread_score: Optional[float] = None
-    
-    # AI Scores - Garbage Domain
-    garbage_volume_score: Optional[float] = None
-    garbage_waste_type_score: Optional[float] = None
-    
+
     # AI Scores - Common
     emotion_score: Optional[float] = None
     location_score: Optional[float] = None

@@ -10,18 +10,6 @@ services:
         fromDatabase:
           name: citizen-db
           property: connectionString
-      - key: AI_DUPLICATE_URL
-        fromService:
-          type: pserv
-          name: citizen-ai-duplicate
-          property: hostport
-      - key: AI_LLM_URL
-        fromService:
-          type: pserv
-          name: citizen-ai-llm
-          property: hostport
-      - key: OPENAI_API_KEY
-        sync: false
 
   # Frontend Service
   - type: web
@@ -35,23 +23,6 @@ services:
           type: web
           name: citizen-backend
           property: url
-
-  # AI Duplicate Service (Private)
-  - type: pserv
-    name: citizen-ai-duplicate
-    env: python
-    buildCommand: "pip install -r ai-duplicate/requirements.txt"
-    startCommand: "cd ai-duplicate && uvicorn service:app --host 0.0.0.0 --port 10000"
-
-  # AI LLM Service (Private)
-  - type: pserv
-    name: citizen-ai-llm
-    env: python
-    buildCommand: "pip install -r ai-llm/requirements.txt"
-    startCommand: "cd ai-llm && uvicorn service:app --host 0.0.0.0 --port 10000"
-    envVars:
-      - key: OPENAI_API_KEY
-        sync: false
 
 databases:
   - name: citizen-db

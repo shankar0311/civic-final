@@ -7,7 +7,6 @@ function ReportForm() {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    category: "road_issues",
     latitude: 40.7128, // Default NYC
     longitude: -74.006,
   });
@@ -38,7 +37,6 @@ function ReportForm() {
       setFormData({
         title: "",
         description: "",
-        category: "pothole",
         latitude: 40.7128,
         longitude: -74.006,
       });
@@ -57,7 +55,7 @@ function ReportForm() {
 
   return (
     <div className="max-w-md mx-auto bg-white p-6 rounded shadow">
-      <h2 className="text-2xl font-bold mb-4">Submit a Report</h2>
+      <h2 className="text-2xl font-bold mb-4">Submit a Road Report</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block mb-1">Title</label>
@@ -115,19 +113,6 @@ function ReportForm() {
               required
             />
           </div>
-        </div>
-        <div>
-          <label className="block mb-1">Category</label>
-          <select
-            className="w-full border p-2 rounded"
-            value={formData.category}
-            onChange={(e) =>
-              setFormData({ ...formData, category: e.target.value })
-            }
-          >
-            <option value="road_issues">Road Issues</option>
-            <option value="waste_management">Waste Management</option>
-          </select>
         </div>
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">

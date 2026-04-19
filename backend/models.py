@@ -1,9 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Enum, Text, Float, LargeBinary
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Text, Float, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from geoalchemy2 import Geometry
-from geoalchemy2 import Geometry
-# from pgvector.sqlalchemy import Vector
 from database import Base
 import enum
 
@@ -94,10 +92,6 @@ class Report(Base):
     pothole_depth_score = Column(Float, nullable=True)
     pothole_spread_score = Column(Float, nullable=True)
     
-    # AI Analysis Scores - Garbage Domain
-    garbage_volume_score = Column(Float, nullable=True)
-    garbage_waste_type_score = Column(Float, nullable=True)
-    
     # AI Analysis Scores - Common
     emotion_score = Column(Float, nullable=True)
     location_score = Column(Float, nullable=True)
@@ -133,6 +127,20 @@ class Vote(Base):
 
     user = relationship("User", back_populates="votes")
     report = relationship("Report", back_populates="votes")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    report_id  = Column(Integer, ForeignKey("reports.id"), nullable=False)
+    message    = Column(String, nullable=False)
+    is_read    = Column(Integer, default=0)   # 0 = unread, 1 = read
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user   = relationship("User",   foreign_keys=[user_id])
+    report = relationship("Report", foreign_keys=[report_id])
+
 
 class StoredImage(Base):
     __tablename__ = "stored_images"

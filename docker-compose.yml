@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: cityreport
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,13 +19,11 @@ services:
     build: ./backend
     ports:
       - "8005:8000"
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/cityreport
-      AI_DUPLICATE_URL: http://ai-duplicate:9001
-      AI_POTHOLE_CHILD_URL: http://ai-pothole-child:8001
-      AI_POTHOLE_PARENT_URL: http://ai-pothole-parent:8003
-      AI_GARBAGE_CHILD_URL: http://ai-garbage-child:8002
-      AI_GARBAGE_PARENT_URL: http://ai-garbage-parent:8004
+      GROK_API_KEY: ${GROK_API_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -40,42 +38,6 @@ services:
       - "3005:80"
     depends_on:
       - backend
-
-  ai-duplicate:
-    build: ./ai-duplicate
-    ports:
-      - "9001:9001"
-    environment:
-      MODEL_PATH: /app/models
-    profiles: ["ai"]
-
-  ai-pothole-child:
-    build: ./ai-pothole-child
-    ports:
-      - "8001:8001"
-    profiles: ["ai"]
-
-  ai-pothole-parent:
-    build: ./ai-pothole-parent
-    ports:
-      - "8003:8003"
-    environment:
-      POTHOLE_MODEL_PATH: /app/models/pothole_severity.pth
-    profiles: ["ai"]
-
-  ai-garbage-child:
-    build: ./ai-garbage-child
-    ports:
-      - "8002:8002"
-    profiles: ["ai"]
-
-  ai-garbage-parent:
-    build: ./ai-garbage-parent
-    ports:
-      - "8004:8004"
-    environment:
-      GARBAGE_MODEL_PATH: /app/models/models/parent_severity_model.pkl
-    profiles: ["ai"]
 
 volumes:
   postgres_data:

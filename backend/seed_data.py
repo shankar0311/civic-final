@@ -18,9 +18,6 @@ async def seed():
         print("Seeding departments...")
         departments = [
             {"name": "Roads", "slug": "roads"},
-            {"name": "Sanitation", "slug": "sanitation"},
-            {"name": "Electrical", "slug": "electrical"},
-            {"name": "Drainage", "slug": "drainage"}
         ]
         
         for dept_data in departments:

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Camera, X, ArrowLeft } from 'lucide-react';
 import Navbar from '../../components/shared/Navbar';
@@ -9,14 +9,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import './NewReport.css';
 import LocationPicker from '../../components/shared/LocationPicker';
 
-const CATEGORIES = ["Road Issues", "Waste Management"];
-
 const NewReport = () => {
   const navigate = useNavigate();
   const { token } = useAuth();
   const [formData, setFormData] = useState({
     title: "",
-    category: "",
     location: "",
     description: "",
     latitude: "",
@@ -24,7 +21,25 @@ const NewReport = () => {
   });
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState(null);
+
+  // Auto-locate on mount; silent fallback if denied
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setFormData(prev => ({
+          ...prev,
+          latitude: coords.latitude.toFixed(6),
+          longitude: coords.longitude.toFixed(6),
+          location: `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`,
+        }));
+      },
+      () => {},
+      { timeout: 8000 }
+    );
+  }, []);
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -49,70 +64,47 @@ const NewReport = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setLoadingStage('Uploading…');
     setError(null);
 
     try {
-      // Validate required fields
       if (!formData.latitude || !formData.longitude) {
         throw new Error("Please provide a location");
       }
 
-      // Map frontend categories to backend format
-      const categoryMap = {
-        "Road Issues": "road_issues",
-        "Waste Management": "waste_management",
-      };
-
-      // Upload images if any
       let imageUrl = null;
       if (images.length > 0) {
         try {
-          // Upload the first image to backend
-          const formData = new FormData();
-          formData.append('file', images[0].file);
-
-          const uploadResponse = await api.post('/upload/image', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
+          const fd = new FormData();
+          fd.append('file', images[0].file);
+          const uploadResponse = await api.post('/upload/image', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
           });
-
           imageUrl = uploadResponse.data.image_url;
-          console.log('Image uploaded:', imageUrl);
-        } catch (uploadError) {
-          console.error('Image upload failed:', uploadError);
+        } catch {
           throw new Error('Failed to upload image. Please try again.');
         }
       }
 
-      // Prepare report data
+      setLoadingStage('Running AI analysis…');
+
       const reportData = {
         title: formData.title,
         description: formData.description,
-        category: categoryMap[formData.category] || "other",
+        category: "road_issues",
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
         image_url: imageUrl,
       };
 
-      console.log("Submitting report:", reportData);
-
-      // Submit report to backend
       const response = await api.post("/reports/", reportData);
 
-      console.log("Report created:", response.data);
-
-      // Show success message
-      alert("Report submitted successfully! AI analysis has been performed.");
-
-      // Navigate to the created report or dashboard
       if (response.data.id) {
         navigate(`/citizen/report/${response.data.id}`);
       } else {
         navigate("/citizen/dashboard");
       }
     } catch (err) {
-      console.error("Error submitting report:", err);
       setError(
         err.response?.data?.detail ||
         err.message ||
@@ -120,6 +112,7 @@ const NewReport = () => {
       );
     } finally {
       setLoading(false);
+      setLoadingStage('');
     }
   };
 
@@ -156,7 +149,7 @@ const NewReport = () => {
           >
             Back
           </Button>
-          <h1 className="text-2xl">Report an Issue</h1>
+          <h1 className="text-2xl">Report a Road Issue</h1>
         </div>
 
         {error && (
@@ -191,27 +184,6 @@ const NewReport = () => {
                   onChange={handleChange}
                   required
                 />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="category" className="form-label">
-                  Category *
-                </label>
-                <select
-                  id="category"
-                  name="category"
-                  className="form-select"
-                  value={formData.category}
-                  onChange={handleChange}
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div className="form-group">
@@ -267,7 +239,7 @@ const NewReport = () => {
                   id="description"
                   name="description"
                   className="form-textarea"
-                  placeholder="Provide detailed information about the issue"
+                  placeholder="Describe the pothole, road break, cracking, or surface damage"
                   rows="5"
                   value={formData.description}
                   onChange={handleChange}
@@ -284,11 +256,11 @@ const NewReport = () => {
                     accept="image/*"
                     multiple
                     onChange={handleImageUpload}
-                    className="hidden"
+                    style={{ display: 'none' }}
                   />
                   <label htmlFor="image-upload" className="image-upload-btn">
                     <Camera size={24} />
-                    <span>Upload Photos</span>
+                    <span>{images.length > 0 ? `${images.length} photo${images.length > 1 ? 's' : ''} selected` : 'Choose Photos'}</span>
                   </label>
                 </div>
 
@@ -310,16 +282,24 @@ const NewReport = () => {
                 )}
               </div>
 
+              {loading && (
+                <div className="submit-loading-banner">
+                  <span className="submit-spinner" />
+                  <span>{loadingStage}</span>
+                </div>
+              )}
+
               <div className="form-actions">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => navigate("/citizen/dashboard")}
+                  disabled={loading}
                 >
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" disabled={loading}>
-                  {loading ? "Submitting..." : "Submit Report"}
+                  {loading ? 'Please wait…' : 'Submit Report'}
                 </Button>
               </div>
             </form>

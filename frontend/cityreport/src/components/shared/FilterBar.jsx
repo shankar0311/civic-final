@@ -20,30 +20,22 @@ const FilterBar = ({ onSearch, onFilterChange, onSortChange }) => {
           <div className="filters-container flex gap-sm w-full md:w-auto overflow-x-auto">
             <select
               className="filter-select"
-              onChange={(e) => onFilterChange("category", e.target.value)}
-            >
-              <option value="">All Categories</option>
-              <option value="road_issues">Road Issues</option>
-              <option value="waste_management">Waste Management</option>
-            </select>
-
-            <select
-              className="filter-select"
               onChange={(e) => onFilterChange("status", e.target.value)}
             >
               <option value="">All Status</option>
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Resolved">Resolved</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
             </select>
 
             <select
               className="filter-select"
               onChange={(e) => onSortChange(e.target.value)}
             >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
               <option value="upvotes">Most Upvoted</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="severity">Highest Severity</option>
             </select>
           </div>
         </div>

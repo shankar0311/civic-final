@@ -4,9 +4,9 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy import text
 from database import engine, Base
-from routers import auth, reports, analytics, votes, upload
+from routers import auth, reports, analytics, votes, upload, modeling, notifications
 
-app = FastAPI(title="Citizen AI System API")
+app = FastAPI(title="Citizen Road Reporting API")
 
 # Create uploads directory if it doesn't exist
 UPLOAD_DIR = Path("uploads")
@@ -18,7 +18,12 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3005",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,6 +35,8 @@ app.include_router(reports.router)
 app.include_router(votes.router)
 app.include_router(analytics.router)
 app.include_router(upload.router)
+app.include_router(modeling.router)
+app.include_router(notifications.router)
 
 @app.on_event("startup")
 async def startup():
@@ -48,4 +55,4 @@ async def startup():
 
 @app.get("/")
 def read_root():
-    return {"message": "Citizen AI System Backend is running"}
+    return {"message": "Citizen Road Reporting backend is running"}
