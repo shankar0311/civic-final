@@ -59,7 +59,6 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: AsyncSession = Depends(get_db)):
-    print(f"DEBUG: Login attempt for {form_data.username}")
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
     
@@ -83,7 +82,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:8005/auth/google/callback"
+REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8005/auth/google/callback")
 
 @router.get("/google/login")
 async def google_login():

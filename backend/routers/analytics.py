@@ -96,16 +96,30 @@ async def get_heatmap_data(
     Get geographic data for heatmap visualization
     Returns lat/lon coordinates with intensity (report count)
     """
-    # Build query with optional filters
-    conditions = []
     if status:
-        conditions.append(f"status = '{status}'")
+        try:
+            status = ReportStatus(status).value
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
+
     if priority:
-        conditions.append(f"priority = '{priority}'")
+        try:
+            priority = ReportPriority(priority).value
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid priority filter")
     
-    conditions.insert(0, "category = 'road_issues'")
-    where_clause = f"WHERE {' AND '.join(conditions)}"
-    
+    conditions = ["category = :category"]
+    params = {"category": "road_issues"}
+
+    if status:
+        conditions.append("status = :status")
+        params["status"] = status
+    if priority:
+        conditions.append("priority = :priority")
+        params["priority"] = priority
+
+    where_clause = " AND ".join(conditions)
+
     query = text(f"""
         SELECT 
             ST_Y(location::geometry) as latitude,
@@ -114,13 +128,13 @@ async def get_heatmap_data(
             priority,
             status
         FROM reports
-        {where_clause}
+        WHERE {where_clause}
         GROUP BY ST_Y(location::geometry), ST_X(location::geometry), priority, status
         ORDER BY intensity DESC
         LIMIT 500
     """)
     
-    result = await db.execute(query)
+    result = await db.execute(query, params)
     rows = result.all()
     
     heatmap_points = [
@@ -140,22 +154,22 @@ async def get_heatmap_data(
 async def get_trend_analysis(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    days: int = Query(30, description="Number of days to analyze")
+    days: int = Query(30, ge=1, le=365, description="Number of days to analyze")
 ):
     """Get report trends over time"""
-    query = text(f"""
+    query = text("""
         SELECT 
             DATE(created_at) as date,
             COUNT(*) as count,
             status
         FROM reports
         WHERE category = 'road_issues'
-        AND created_at >= NOW() - INTERVAL '{days} days'
+        AND created_at >= NOW() - (:days * INTERVAL '1 day')
         GROUP BY DATE(created_at), status
         ORDER BY date DESC
     """)
     
-    result = await db.execute(query)
+    result = await db.execute(query, {"days": days})
     rows = result.all()
     
     # Group by date

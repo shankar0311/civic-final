@@ -16,6 +16,8 @@ const STATUS_COLORS = {
     pending:     '#ef4444',
     in_progress: '#f59e0b',
     resolved:    '#10b981',
+    reopened:    '#8b5cf6',
+    closed:      '#6b7280',
 };
 
 const makeIcon = (color) => L.divIcon({
@@ -34,6 +36,8 @@ const ICONS = {
     pending:     makeIcon(STATUS_COLORS.pending),
     in_progress: makeIcon(STATUS_COLORS.in_progress),
     resolved:    makeIcon(STATUS_COLORS.resolved),
+    reopened:    makeIcon(STATUS_COLORS.reopened),
+    closed:      makeIcon(STATUS_COLORS.closed),
 };
 
 const SEVERITY_INTENSITY = { critical: 1.0, high: 0.8, medium: 0.5, low: 0.3 };
@@ -86,11 +90,19 @@ const statusVariant = (s = '') => {
     if (s === 'resolved')    return 'success';
     if (s === 'in_progress') return 'warning';
     if (s === 'pending')     return 'danger';
+    if (s === 'reopened')    return 'danger';
+    if (s === 'closed')      return 'success';
     return 'neutral';
 };
 
 const statusLabel = (s = '') =>
-    ({ pending: 'Pending', in_progress: 'In Progress', resolved: 'Resolved' }[s] || s);
+    ({
+        pending: 'Pending',
+        in_progress: 'In Progress',
+        resolved: 'Resolved',
+        reopened: 'Reopened',
+        closed: 'Closed',
+    }[s] || s);
 
 // ── Main component ─────────────────────────────────────────────────────────
 const MapView = () => {
@@ -99,7 +111,7 @@ const MapView = () => {
     const [reports, setReports]       = useState([]);
     const [loading, setLoading]       = useState(true);
     const [showHeatmap, setShowHeatmap] = useState(false);
-    const [filters, setFilters]       = useState({ pending: true, in_progress: true, resolved: true });
+    const [filters, setFilters]       = useState({ pending: true, in_progress: true, resolved: true, reopened: true, closed: true });
     const [locateTrigger, setLocateTrigger] = useState(1);
     const [locating, setLocating]     = useState(true);
     const [userPos, setUserPos]       = useState(null);
@@ -155,7 +167,13 @@ const MapView = () => {
 
                     {/* Status filters */}
                     <div className="map-filter-row">
-                        {Object.entries({ pending: 'Pending', in_progress: 'In Progress', resolved: 'Resolved' }).map(([key, label]) => (
+                        {Object.entries({
+                            pending: 'Pending',
+                            in_progress: 'In Progress',
+                            resolved: 'Resolved',
+                            reopened: 'Reopened',
+                            closed: 'Closed',
+                        }).map(([key, label]) => (
                             <button
                                 key={key}
                                 className={`map-filter-chip ${filters[key] ? 'active' : ''}`}

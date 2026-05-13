@@ -155,7 +155,7 @@ async def get_my_reports(
     return [_serialize_report(r) for r in result.scalars().all()]
 
 
-@router.get("/", response_model=List[ReportResponse])
+@router.get("/")
 async def get_reports(
     lat: Optional[float] = None,
     lon: Optional[float] = None,
@@ -167,38 +167,49 @@ async def get_reports(
     end_date: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Sort by: created_at, upvotes, priority"),
     sort_order: Optional[str] = Query("desc", description="asc or desc"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
     if category and category != ROAD_CATEGORY:
-        return []
+        return {"items": [], "total": 0, "page": page, "limit": limit}
 
     query = select(Report).where(Report.category == ROAD_CATEGORY)
+    count_query = select(func.count(Report.id)).where(Report.category == ROAD_CATEGORY)
 
     if status:
         try:
-            query = query.where(Report.status == ReportStatus(status))
+            status_filter = Report.status == ReportStatus(status)
+            query = query.where(status_filter)
+            count_query = count_query.where(status_filter)
         except ValueError:
             pass
 
     if priority:
         try:
-            query = query.where(Report.priority == ReportPriority(priority))
+            priority_filter = Report.priority == ReportPriority(priority)
+            query = query.where(priority_filter)
+            count_query = count_query.where(priority_filter)
         except ValueError:
             pass
 
     if start_date:
-        query = query.where(Report.created_at >= start_date)
+        start_date_filter = Report.created_at >= start_date
+        query = query.where(start_date_filter)
+        count_query = count_query.where(start_date_filter)
     if end_date:
-        query = query.where(Report.created_at <= end_date)
+        end_date_filter = Report.created_at <= end_date
+        query = query.where(end_date_filter)
+        count_query = count_query.where(end_date_filter)
 
     if lat is not None and lon is not None and radius is not None:
-        query = query.where(
-            func.ST_DWithin(
-                Report.location.cast(func.geography),
-                func.ST_GeogFromText(f"SRID=4326;POINT({lon} {lat})"),
-                radius,
-            )
+        location_filter = func.ST_DWithin(
+            Report.location.cast(func.geography),
+            func.ST_GeogFromText(f"SRID=4326;POINT({lon} {lat})"),
+            radius,
         )
+        query = query.where(location_filter)
+        count_query = count_query.where(location_filter)
 
     if sort_by == "upvotes":
         order_col = Report.upvotes
@@ -209,11 +220,24 @@ async def get_reports(
     else:
         order_col = Report.created_at
 
-    query = query.order_by(order_col.asc() if sort_order == "asc" else order_col.desc())
+    offset = (page - 1) * limit
+    query = (
+        query
+        .order_by(order_col.asc() if sort_order == "asc" else order_col.desc())
+        .offset(offset)
+        .limit(limit)
+    )
 
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
     result = await db.execute(query)
     reports = result.scalars().all()
-    return [_serialize_report(report) for report in reports]
+    return {
+        "items": [_serialize_report(report) for report in reports],
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
 
 
 @router.get("/{report_id}", response_model=ReportResponse)

@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy import text
 from database import engine, Base
-from routers import auth, reports, analytics, votes, upload, modeling, notifications
+from routers import auth, reports, analytics, votes, upload, modeling, notifications, user as user_router
 
 app = FastAPI(title="Citizen Road Reporting API")
 
@@ -37,6 +37,7 @@ app.include_router(analytics.router)
 app.include_router(upload.router)
 app.include_router(modeling.router)
 app.include_router(notifications.router)
+app.include_router(user_router.router, prefix="/users", tags=["users"])
 
 @app.on_event("startup")
 async def startup():

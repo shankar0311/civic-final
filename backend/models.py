@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Text, Float, LargeBinary
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Text, Float, LargeBinary, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from geoalchemy2 import Geometry
@@ -69,6 +69,13 @@ class User(Base):
 
 class Report(Base):
     __tablename__ = "reports"
+    __table_args__ = (
+        Index('ix_reports_status', 'status'),
+        Index('ix_reports_priority', 'priority'),
+        Index('ix_reports_user_id', 'user_id'),
+        Index('ix_reports_created_at', 'created_at'),
+        Index('ix_reports_category', 'category'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)

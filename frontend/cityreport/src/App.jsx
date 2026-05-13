@@ -21,6 +21,7 @@ import OfficerDashboard from './pages/officer/Dashboard';
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminReports from './pages/admin/AdminReports';
+import Analytics from './pages/admin/Analytics';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -88,6 +89,7 @@ function App() {
                   <Route path="dashboard" element={<AdminDashboard />} />
                   <Route path="reports" element={<AdminReports />} />
                   <Route path="reports/:id" element={<ReportDetail />} />
+                  <Route path="analytics" element={<Analytics />} />
                 </Routes>
               </ProtectedRoute>
             }

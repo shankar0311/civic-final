@@ -1,11 +1,11 @@
-from database import SessionLocal
+from database import AsyncSessionLocal
 from models import Report
 from sqlalchemy import select, desc
 import json
 import asyncio
 
 async def check_latest_report():
-    async with SessionLocal() as db:
+    async with AsyncSessionLocal() as db:
         result = await db.execute(select(Report).order_by(desc(Report.created_at)).limit(1))
         report = result.scalars().first()
         if report:
