@@ -9,7 +9,7 @@ WORKDIR /app
 
 COPY cityreport/ .
 RUN rm -rf node_modules
-RUN npm install
+RUN npm install --legacy-peer-deps
 RUN npm rebuild esbuild
 RUN npm run build
 
