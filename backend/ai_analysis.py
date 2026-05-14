@@ -214,19 +214,8 @@ def _visual_scores_from_models(image_bytes: bytes, description: str) -> tuple[Op
     if detector_result is None or detector_result.count == 0:
         return None, None, {"mode": "model-unavailable"}
 
-    pothole_box = max(detector_result.boxes, key=lambda box: box.get("area_ratio", 0.0))
     spread_score = _clip01((detector_result.max_area_ratio / 0.22) + min(detector_result.count, 4) * 0.05)
-
-    depth_result = road_model_suite.estimate_depth(image_bytes, pothole_box.get("xyxy"))
-    if depth_result is not None:
-        depth_score = depth_result.depth_score
-        depth_meta = {
-            "source": depth_result.source,
-            "raw_mean": round(depth_result.raw_mean, 4),
-        }
-    else:
-        depth_score, _, text_meta = _visual_scores_from_text(description)
-        depth_meta = {"source": "text-fallback", "text_support": text_meta}
+    depth_score, _, text_meta = _visual_scores_from_text(description)
 
     return depth_score, spread_score, {
         "mode": "model-assisted",
@@ -236,7 +225,7 @@ def _visual_scores_from_models(image_bytes: bytes, description: str) -> tuple[Op
             "max_area_ratio": round(detector_result.max_area_ratio, 4),
             "boxes": detector_result.boxes[:10],
         },
-        "depth": depth_meta,
+        "depth": {"source": "text-fallback", "text_support": text_meta},
     }
 
 
@@ -337,9 +326,7 @@ async def analyze_pothole_report(
         (desc_sc * 0.10)
     )
 
-    severity_features = [depth_score, spread_score, desc_sc / 100.0, loc_score / 100.0, upvote_score]
-    severity_model_prediction = road_model_suite.predict_severity(severity_features)
-    severity = severity_model_prediction.severity_score if severity_model_prediction else heuristic_severity
+    severity = heuristic_severity
 
     location_meta = {
         "mode": "osm-overpass-heuristic",
@@ -354,7 +341,7 @@ async def analyze_pothole_report(
         "nearby_pois": {k: [p["name"] for p in v[:3]] for k, v in pois.items()},
     }
     sentiment_meta = {
-        "source": severity_model_prediction.source if severity_model_prediction else "ahp-heuristic",
+        "source": "ahp-heuristic",
         "image_score": round(image_score_h, 2),
         "description_score": round(desc_sc, 2),
         "location_score": round(loc_score, 2),
