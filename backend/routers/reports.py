@@ -34,7 +34,6 @@ def _serialize_report(report: Report) -> dict:
         "assigned_team_id": report.assigned_team_id,
         "resolution_image_url": report.resolution_image_url,
         "citizen_feedback": report.citizen_feedback,
-        "pothole_depth_score": report.pothole_depth_score,
         "pothole_spread_score": report.pothole_spread_score,
         "emotion_score": report.emotion_score,
         "location_score": report.location_score,
@@ -125,7 +124,6 @@ async def create_report(
         location=WKTElement(location_wkt, srid=4326),
         user_id=current_user.id,
         department_id=department_id,
-        pothole_depth_score=ai_scores.get("pothole_depth_score"),
         pothole_spread_score=ai_scores.get("pothole_spread_score"),
         emotion_score=ai_scores.get("emotion_score"),
         location_score=ai_scores.get("location_score"),
@@ -304,7 +302,6 @@ async def reanalyze_report(
         citizen_severity=report.severity.value if report.severity else "medium",
     )
 
-    report.pothole_depth_score = ai_scores.get("pothole_depth_score")
     report.pothole_spread_score = ai_scores.get("pothole_spread_score")
     report.emotion_score = ai_scores.get("emotion_score")
     report.location_score = ai_scores.get("location_score")

@@ -96,8 +96,8 @@ class Report(Base):
     # embedding = Column(Vector(384))
     
     # AI Analysis Scores - Pothole Domain
-    pothole_depth_score = Column(Float, nullable=True)
-    pothole_spread_score = Column(Float, nullable=True)
+    # pothole_depth_score removed — unreliable from 2D image without depth model
+    pothole_spread_score = Column(Float, nullable=True)  # YOLO area_ratio (0-1)
     
     # AI Analysis Scores - Common
     emotion_score = Column(Float, nullable=True)

@@ -81,8 +81,7 @@ class ReportResponse(BaseModel):
     citizen_feedback: Optional[str]
     
     # AI Scores - Pothole Domain
-    pothole_depth_score: Optional[float] = None
-    pothole_spread_score: Optional[float] = None
+    pothole_spread_score: Optional[float] = None  # YOLO area_ratio (0-1)
 
     # AI Scores - Common
     emotion_score: Optional[float] = None
