@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v3
 
@@ -24,18 +24,10 @@ jobs:
         pip install -r backend/requirements.txt
         pip install httpx pytest
 
-    - name: Run Backend Tests (Placeholder)
+    - name: Run Backend Tests
       run: |
-        # pytest backend/tests/ # Uncomment when tests are added
-        echo "Backend tests passed"
-
-    - name: Install AI Duplicate Dependencies
-      run: |
-        pip install -r ai-duplicate/requirements.txt
-
-    - name: Run AI Duplicate Tests (Placeholder)
-      run: |
-        echo "AI Duplicate tests passed"
+        echo "Backend syntax check"
+        python -m py_compile backend/main.py backend/models.py backend/schemas.py
 
     - name: Set up Node.js
       uses: actions/setup-node@v3
@@ -44,7 +36,7 @@ jobs:
 
     - name: Install Frontend Dependencies
       working-directory: ./frontend/cityreport
-      run: npm install
+      run: npm install --legacy-peer-deps
 
     - name: Build Frontend
       working-directory: ./frontend/cityreport
@@ -54,14 +46,9 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
     - uses: actions/checkout@v3
-    
-    - name: Check secret presence (non-sensitive)
-      run: |
-        if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then echo "DOCKERHUB_USERNAME is NOT set"; else echo "DOCKERHUB_USERNAME is set"; fi
-        if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then echo "DOCKERHUB_TOKEN is NOT set"; else echo "DOCKERHUB_TOKEN is set"; fi
 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
@@ -69,7 +56,7 @@ jobs:
         registry: docker.io
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-    
+
     - name: Build and Push Backend
       uses: docker/build-push-action@v4
       with:

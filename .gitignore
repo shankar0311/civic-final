@@ -34,9 +34,11 @@ backend/models/
 # Claude Code internal files
 .claude/
 
+# Agent memory files
+.agent/
+
 # Git bundles and misc dev artifacts
 *.bundle
 test_*.py
 handfull.md
 SYSTEM_PORTS.md
-node_modules/
