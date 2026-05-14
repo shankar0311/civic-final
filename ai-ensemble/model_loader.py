@@ -1,6 +1,8 @@
 from ultralytics import YOLO
 from transformers import pipeline
 import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger("ai-ensemble")
 
@@ -20,7 +22,12 @@ class ModelLoader:
         if self._pothole_model is None:
             logger.info("Loading YOLOv8 Pothole Model...")
             try:
-                self._pothole_model = YOLO("keremberke/yolov8m-pothole-segmentation")
+                model_path = os.getenv("POTHOLE_YOLO_MODEL") or os.getenv("ROAD_DETECTOR_MODEL")
+                if not model_path:
+                    candidate = Path("backend/models/road_detector/best.pt")
+                    model_path = str(candidate) if candidate.exists() else "keremberke/yolov8m-pothole-segmentation"
+                logger.info("Using pothole model: %s", model_path)
+                self._pothole_model = YOLO(model_path)
             except Exception as e:
                 logger.error(f"Failed to load YOLO model: {e}")
                 raise e

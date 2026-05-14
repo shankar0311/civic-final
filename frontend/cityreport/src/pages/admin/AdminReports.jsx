@@ -33,7 +33,7 @@ const AdminReports = () => {
       }
 
       const response = await api.get(`/reports?${params}`);
-      setReports(response.data);
+      setReports(Array.isArray(response.data) ? response.data : response.data.items || []);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching reports:', error);

@@ -39,7 +39,7 @@ const CitizenDashboard = () => {
 
     useEffect(() => {
         api.get('/reports/')
-            .then(({ data }) => setReports(data))
+            .then(({ data }) => setReports(Array.isArray(data) ? data : data.items || []))
             .catch(() => setError('Failed to load reports.'))
             .finally(() => setLoading(false));
     }, []);
@@ -52,7 +52,7 @@ const CitizenDashboard = () => {
         try {
             await api.post(`/reports/${id}/upvote`);
             const { data } = await api.get('/reports/');
-            setReports(data);
+            setReports(Array.isArray(data) ? data : data.items || []);
         } catch {
             if (wasUpvoted) localStorage.setItem(key, '1');
             else localStorage.removeItem(key);

@@ -26,3 +26,5 @@ ml/data/
 ml/runs/
 backend/models/road_detector/
 backend/models/road_severity/
+*.pt
+*.onnx

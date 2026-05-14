@@ -45,36 +45,56 @@ async def analyze_report(
 
     # 1. VISUAL SPREAD ANALYSIS (YOLOv8)
     visual_score = 0.0
-    pothole_details = {"count": 0, "max_area_ratio": 0.0}
+    pothole_details = {"count": 0, "max_area_ratio": 0.0, "detections": []}
     
     try:
         model = model_loader.get_pothole_model()
         results = model(pil_image)
         
+        severity_scores = {
+            "small_pothole": 0.35,
+            "medium_pothole": 0.65,
+            "severe_pothole": 1.0,
+        }
+
         for r in results:
-            if r.boxes:
-                pothole_details["count"] = len(r.boxes)
-                img_area = r.orig_shape[0] * r.orig_shape[1]
-                
-                max_box_area = 0
-                for box in r.boxes:
-                    w = box.xywh[0][2].item()
-                    h = box.xywh[0][3].item()
-                    area = w * h
-                    if area > max_box_area:
-                        max_box_area = area
-                
-                ratio = max_box_area / img_area
-                pothole_details["max_area_ratio"] = ratio
-                
-                if ratio > 0.05:
-                    visual_score = 1.0
-                elif ratio > 0.01:
-                    visual_score = 0.6
-                else:
-                    visual_score = 0.3
-            else:
-                visual_score = 0.0
+            if not r.boxes:
+                continue
+
+            img_area = r.orig_shape[0] * r.orig_shape[1]
+            pothole_details["count"] += len(r.boxes)
+
+            for box in r.boxes:
+                class_id = int(box.cls[0].item()) if box.cls is not None else -1
+                class_name = r.names.get(class_id, "pothole") if hasattr(r, "names") else "pothole"
+                confidence = float(box.conf[0].item()) if box.conf is not None else 0.0
+                x_center, y_center, width, height = [float(value) for value in box.xywh[0].tolist()]
+                area_ratio = (width * height) / img_area
+                pothole_details["max_area_ratio"] = max(pothole_details["max_area_ratio"], area_ratio)
+
+                class_score = severity_scores.get(class_name)
+                if class_score is None:
+                    if area_ratio > 0.05:
+                        class_score = 1.0
+                    elif area_ratio > 0.01:
+                        class_score = 0.6
+                    else:
+                        class_score = 0.3
+
+                visual_score = max(visual_score, class_score)
+                pothole_details["detections"].append(
+                    {
+                        "class": class_name,
+                        "confidence": round(confidence, 4),
+                        "area_ratio": round(area_ratio, 4),
+                        "bbox_xywh": [
+                            round(x_center, 2),
+                            round(y_center, 2),
+                            round(width, 2),
+                            round(height, 2),
+                        ],
+                    }
+                )
 
     except Exception as e:
         logger.error(f"Image analysis failed: {e}")

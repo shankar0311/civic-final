@@ -36,7 +36,7 @@ const OfficerDashboard = () => {
             }
 
             const response = await api.get('/reports/', { params });
-            setReports(response.data);
+            setReports(Array.isArray(response.data) ? response.data : response.data.items || []);
         } catch (err) {
             console.error('Error fetching reports:', err);
         } finally {

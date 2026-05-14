@@ -8,7 +8,7 @@ function ReportList() {
         const fetchReports = async () => {
             try {
                 const response = await api.get('/reports/');
-                setReports(response.data);
+                setReports(Array.isArray(response.data) ? response.data : response.data.items || []);
             } catch (error) {
                 console.error('Error fetching reports:', error);
             }

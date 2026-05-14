@@ -123,7 +123,8 @@ const MapView = () => {
     useEffect(() => {
         api.get('/reports/')
             .then(({ data }) => {
-                const valid = data.filter(r => r.latitude && r.longitude);
+                const rows = Array.isArray(data) ? data : data.items || [];
+                const valid = rows.filter(r => r.latitude && r.longitude);
                 setReports(valid);
                 if (valid.length > 0) {
                     setMapCenter([valid[0].latitude, valid[0].longitude]);
