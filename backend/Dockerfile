@@ -2,13 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for PostGIS/GeoAlchemy and building python packages
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
+# Install CPU-only torch first to avoid pulling the CUDA variant (~800MB vs ~200MB)
+RUN pip install --no-cache-dir \
+    torch==2.2.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir -r requirements.txt
 
