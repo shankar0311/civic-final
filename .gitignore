@@ -39,3 +39,4 @@ backend/models/
 test_*.py
 handfull.md
 SYSTEM_PORTS.md
+node_modules/
