@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, MapPin, Calendar, ThumbsUp, CheckCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import Navbar from '../../components/shared/Navbar';
 import Button from '../../components/shared/Button';
 import Card from '../../components/shared/Card';
@@ -10,6 +13,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import './ReportDetail.css';
 import { getImageUrl } from '../../utils/image';
 import api from '../../api';
+
+// Fix default leaflet marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
 const ReportDetail = () => {
   const { id } = useParams();
@@ -297,19 +308,21 @@ const ReportDetail = () => {
                 <div className="info-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
                   <span className="info-label">Location</span>
                   {report.latitude && report.longitude && (
-                    <a
-                      href={`https://www.openstreetmap.org/?mlat=${report.latitude}&mlon=${report.longitude}&zoom=16`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ display: 'block', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', lineHeight: 0 }}
-                    >
-                      <img
-                        src={`https://staticmap.openstreetmap.de/staticmap.php?center=${report.latitude},${report.longitude}&zoom=15&size=260x120&markers=${report.latitude},${report.longitude},red-pushpin`}
-                        alt="Map preview"
-                        style={{ width: '100%', display: 'block' }}
-                        onError={e => { e.target.style.display = 'none'; }}
-                      />
-                    </a>
+                    <div style={{ borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)', height: '120px' }}>
+                      <MapContainer
+                        center={[report.latitude, report.longitude]}
+                        zoom={15}
+                        style={{ height: '100%', width: '100%' }}
+                        zoomControl={false}
+                        dragging={false}
+                        scrollWheelZoom={false}
+                        doubleClickZoom={false}
+                        attributionControl={false}
+                      >
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <Marker position={[report.latitude, report.longitude]} />
+                      </MapContainer>
+                    </div>
                   )}
                   <div className="flex items-start gap-xs">
                     <MapPin size={14} className="text-muted" style={{ marginTop: 2, flexShrink: 0 }} />
