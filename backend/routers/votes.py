@@ -91,21 +91,23 @@ async def recalculate_ai_score(report: Report, db: AsyncSession) -> dict:
 
     try:
         sentiment = json.loads(report.sentiment_meta or "{}")
+        location = json.loads(report.location_meta or "{}")
 
-        image_score = float(sentiment.get("image_score") or 0)
-        location_score = float(sentiment.get("location_score") or (report.location_score or 0) * 100)
-        traffic_score = float(sentiment.get("traffic_score") or 0)
-        desc_score = float(sentiment.get("description_score") or (report.emotion_score or 0) * 100)
+        image_score    = float(sentiment.get("image_score") or 0)
+        desc_score     = float(sentiment.get("description_score") or (report.emotion_score or 0) * 100)
+        location_score = float(sentiment.get("location_score") or location.get("location_score") or (report.location_score or 0) * 100)
+        traffic_score  = float(location.get("traffic_score") or sentiment.get("traffic_score") or 0)
 
         upvote_ratio = min((report.upvotes or 0) / 25.0, 1.0)
         upvote_score = round(upvote_ratio * 100)
 
+        # Weights: Image 40%, Description 25%, Location 15%, Traffic 10%, Upvotes 10%
         final = round(min(
             0.40 * image_score +
-            0.20 * location_score +
-            0.20 * traffic_score +
-            0.10 * upvote_score +
-            0.10 * desc_score,
+            0.25 * desc_score +
+            0.15 * location_score +
+            0.10 * traffic_score +
+            0.10 * upvote_score,
             100.0
         ), 1)
 
