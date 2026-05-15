@@ -20,14 +20,92 @@ W_TRAFFIC     = 0.10  # traffic (part of location)
 W_UPVOTE      = 0.15  # social
 W_DESCRIPTION = 0.25  # sentiment/description
 
+# OSM amenity tag → location risk score (mid-range of each category)
 CRITICAL_POI_WEIGHTS = {
-    "hospital": 100,
-    "clinic": 70,
-    "fire_station": 100,
-    "police": 80,
-    "school": 85,
-    "university": 65,
-    "bus_station": 50,
+    # Healthcare / Emergency
+    "hospital": 97,
+    "clinic": 62,
+    "doctors": 55,
+    "pharmacy": 45,
+    "ambulance_station": 92,
+
+    # Emergency Services
+    "fire_station": 95,
+    "police": 77,
+
+    # Education
+    "kindergarten": 88,
+    "school": 90,
+    "college": 77,
+    "university": 72,
+    "library": 55,
+
+    # Transport Hubs
+    "bus_station": 82,
+    "bus_stop": 55,
+    "taxi": 45,
+    "ferry_terminal": 75,
+
+    # Government / Civic
+    "townhall": 67,
+    "courthouse": 65,
+    "post_office": 52,
+    "community_centre": 50,
+
+    # Commercial / Market
+    "marketplace": 70,
+    "fuel": 48,
+    "bank": 52,
+
+    # Recreation
+    "stadium": 62,
+    "sports_centre": 52,
+    "place_of_worship": 50,
+}
+
+# OSM railway tag → location score
+RAILWAY_POI_WEIGHTS = {
+    "station": 85,        # Railway / Metro station
+    "subway_entrance": 85,
+    "halt": 68,
+    "tram_stop": 62,
+    "platform": 55,
+}
+
+# OSM aeroway tag → location score
+AEROWAY_POI_WEIGHTS = {
+    "terminal": 90,
+    "aerodrome": 87,
+}
+
+# OSM landuse tag → location score (area-based context)
+# "education" is the primary tag for colleges/universities in Indian OSM data
+LANDUSE_WEIGHTS = {
+    "education": 77,      # College / University campus (very common in India)
+    "commercial": 70,
+    "retail": 65,
+    "industrial": 55,
+    "residential": 58,
+    "village_green": 35,
+    "farmland": 22,
+    "forest": 15,
+}
+
+# OSM building tag → location score (Indian OSM often tags by building type)
+BUILDING_POI_WEIGHTS = {
+    "college": 77,
+    "university": 72,
+    "school": 90,
+    "hospital": 97,
+    "government": 67,
+    "public": 55,
+}
+
+# OSM office tag → location score
+OFFICE_POI_WEIGHTS = {
+    "it": 65,
+    "government": 68,
+    "company": 52,
 }
 
 # OSM highway tag → traffic score (0-100)
@@ -59,22 +137,41 @@ def _grok_api_key() -> Optional[str]:
 
 # ── OSM: nearby critical POIs ─────────────────────────────────────────────────
 
-async def query_nearby_pois(latitude: float, longitude: float, radius_m: int = 500) -> dict:
+async def query_nearby_pois(latitude: float, longitude: float, radius_m: int = 750) -> dict:
+    """Query OSM for all nearby infrastructure within radius_m metres."""
     if latitude is None or longitude is None:
         return {}
 
     amenities = "|".join(CRITICAL_POI_WEIGHTS.keys())
+    railways  = "|".join(RAILWAY_POI_WEIGHTS.keys())
+    aeroways  = "|".join(AEROWAY_POI_WEIGHTS.keys())
+    landuses  = "|".join(LANDUSE_WEIGHTS.keys())
+    offices   = "|".join(OFFICE_POI_WEIGHTS.keys())
+    buildings = "|".join(BUILDING_POI_WEIGHTS.keys())
+
+    r = radius_m
+    lat, lon = latitude, longitude
     query = f"""
-[out:json][timeout:10];
+[out:json][timeout:20];
 (
-  node["amenity"~"{amenities}"](around:{radius_m},{latitude},{longitude});
-  way["amenity"~"{amenities}"](around:{radius_m},{latitude},{longitude});
+  node["amenity"~"{amenities}"](around:{r},{lat},{lon});
+  way["amenity"~"{amenities}"](around:{r},{lat},{lon});
+  node["railway"~"{railways}"](around:{r},{lat},{lon});
+  way["railway"~"{railways}"](around:{r},{lat},{lon});
+  node["aeroway"~"{aeroways}"](around:{r},{lat},{lon});
+  way["aeroway"~"{aeroways}"](around:{r},{lat},{lon});
+  way["landuse"~"{landuses}"](around:{r},{lat},{lon});
+  node["office"~"{offices}"](around:{r},{lat},{lon});
+  way["office"~"{offices}"](around:{r},{lat},{lon});
+  way["building"~"{buildings}"](around:{r},{lat},{lon});
+  node["building"~"{buildings}"](around:{r},{lat},{lon});
 );
 out center 50;
 """
+    headers = {"User-Agent": "CityReport/1.0 (road pothole reporting system)"}
     try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.post(OVERPASS_URL, data={"data": query})
+        async with httpx.AsyncClient(timeout=22.0) as client:
+            resp = await client.post(OVERPASS_URL, data={"data": query}, headers=headers)
             resp.raise_for_status()
             elements = resp.json().get("elements", [])
     except Exception as exc:
@@ -84,13 +181,26 @@ out center 50;
     found: dict[str, list[dict]] = {}
     for el in elements:
         tags = el.get("tags", {})
-        amenity = tags.get("amenity", "")
-        if not amenity:
+        key = (
+            tags.get("amenity")
+            or tags.get("railway")
+            or tags.get("aeroway")
+            or tags.get("landuse")
+            or tags.get("office")
+            or tags.get("building")
+        )
+        if not key:
             continue
-        name = tags.get("name", amenity)
+        # Skip generic building tags that have no scoring value
+        all_weights = {**CRITICAL_POI_WEIGHTS, **RAILWAY_POI_WEIGHTS,
+                       **AEROWAY_POI_WEIGHTS, **LANDUSE_WEIGHTS,
+                       **OFFICE_POI_WEIGHTS, **BUILDING_POI_WEIGHTS}
+        if key not in all_weights:
+            continue
+        name = tags.get("name", key)
         lat = el.get("lat") or el.get("center", {}).get("lat")
         lon = el.get("lon") or el.get("center", {}).get("lon")
-        found.setdefault(amenity, []).append({"name": name, "lat": lat, "lon": lon})
+        found.setdefault(key, []).append({"name": name, "lat": lat, "lon": lon})
 
     return found
 
@@ -98,19 +208,26 @@ out center 50;
 def location_score_from_pois(pois: dict) -> tuple[float, str]:
     """Returns location_score (0-100) and a human-readable summary."""
     if not pois:
-        return 10.0, "no critical locations nearby"
+        return 0.0, "no important infrastructure within 500m"
 
     best = 0.0
     notes = []
-    for amenity, items in pois.items():
-        weight = CRITICAL_POI_WEIGHTS.get(amenity, 30)
-        # More POIs of same type add diminishing returns
-        count_boost = min(len(items), 3) * 5
+    for key, items in pois.items():
+        weight = (
+            CRITICAL_POI_WEIGHTS.get(key)
+            or RAILWAY_POI_WEIGHTS.get(key)
+            or AEROWAY_POI_WEIGHTS.get(key)
+            or LANDUSE_WEIGHTS.get(key)
+            or OFFICE_POI_WEIGHTS.get(key)
+            or BUILDING_POI_WEIGHTS.get(key)
+            or 30
+        )
+        count_boost = min(len(items) - 1, 2) * 5  # diminishing returns for duplicates
         score = min(weight + count_boost, 100)
         best = max(best, score)
-        notes.append(f"{items[0]['name']} ({amenity})")
+        notes.append(f"{items[0]['name']} ({key})")
 
-    summary = ", ".join(notes[:4])
+    summary = ", ".join(notes[:5])
     return round(best, 1), summary
 
 
@@ -126,9 +243,10 @@ async def query_traffic_density(latitude: float, longitude: float, radius_m: int
 way["highway"](around:{radius_m},{latitude},{longitude});
 out tags 10;
 """
+    headers = {"User-Agent": "CityReport/1.0 (road pothole reporting system)"}
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.post(OVERPASS_URL, data={"data": query})
+            resp = await client.post(OVERPASS_URL, data={"data": query}, headers=headers)
             resp.raise_for_status()
             elements = resp.json().get("elements", [])
     except Exception as exc:
@@ -215,13 +333,13 @@ Analyze the image carefully and produce an Image Score (0–100) representing ph
 ### STEP 2: Apply AHP Weights
 
 Use EXACTLY these weights:
-* Image Score → 0.40
-* Location Score → 0.20
-* Traffic Severity → 0.20
-* Upvote Score → 0.10
-* User Description Score → 0.10
+* Image Score → 0.35
+* User Description Score → 0.25
+* Upvote Score → 0.15
+* Location Score → 0.15
+* Traffic Severity → 0.10
 
-Final Score = (0.40 × Image Score) + (0.20 × {round(location_score)}) + (0.20 × {round(traffic_score)}) + (0.10 × {upvote_display}) + (0.10 × {round(desc_score)})
+Final Score = (0.35 × Image Score) + (0.25 × {round(desc_score)}) + (0.15 × {upvote_display}) + (0.15 × {round(location_score)}) + (0.10 × {round(traffic_score)})
 
 ---
 
