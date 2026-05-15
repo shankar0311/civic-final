@@ -58,8 +58,7 @@ const OfficerDashboard = () => {
         pending: reports.filter(r => r.status === 'pending').length,
         inProgress: reports.filter(r => r.status === 'in_progress').length,
         resolved: reports.filter(r => r.status === 'resolved' || r.status === 'closed').length,
-        reopened: reports.filter(r => r.status === 'reopened').length,
-        critical: reports.filter(r => r.priority === 'critical').length
+        reopened: reports.filter(r => r.status === 'reopened').length
     };
 
     const getStatusVariant = (status) => {
@@ -81,11 +80,11 @@ const OfficerDashboard = () => {
 
     const getPriorityVariant = (priority) => {
         switch (priority.toLowerCase()) {
-            case 'critical':
-                return 'danger';
             case 'high':
-                return 'warning';
+                return 'danger';
             case 'medium':
+                return 'warning';
+            case 'low':
                 return 'info';
             default:
                 return 'neutral';
@@ -138,16 +137,6 @@ const OfficerDashboard = () => {
             </Card>
 
             <Card className="stat-card">
-              <div className="stat-icon critical">
-                <AlertCircle size={24} />
-              </div>
-              <div className="stat-content">
-                <p className="stat-label">Critical</p>
-                <p className="stat-value">{stats.critical}</p>
-              </div>
-            </Card>
-
-            <Card className="stat-card">
               <div className="stat-icon pending" style={{ background: 'var(--danger-light, #fee2e2)' }}>
                 <AlertCircle size={24} style={{ color: 'var(--danger)' }} />
               </div>
@@ -182,7 +171,6 @@ const OfficerDashboard = () => {
                   }}
                 >
                   <option value="">All Priorities</option>
-                  <option value="critical">Critical</option>
                   <option value="high">High</option>
                   <option value="medium">Medium</option>
                   <option value="low">Low</option>
