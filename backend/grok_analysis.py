@@ -14,10 +14,10 @@ GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 # AHP weights (must sum to 1.0) — aligned with proposal: Visual 35%, Location 20%, Sentiment 25%, Social 20%
-W_IMAGE       = 0.35  # visual
+W_IMAGE       = 0.40  # visual
 W_LOCATION    = 0.15  # location risk
 W_TRAFFIC     = 0.10  # traffic (part of location)
-W_UPVOTE      = 0.15  # social
+W_UPVOTE      = 0.10  # social
 W_DESCRIPTION = 0.25  # sentiment/description
 
 # OSM amenity tag → location risk score (mid-range of each category)
@@ -137,7 +137,7 @@ def _grok_api_key() -> Optional[str]:
 
 # ── OSM: nearby critical POIs ─────────────────────────────────────────────────
 
-async def query_nearby_pois(latitude: float, longitude: float, radius_m: int = 750) -> dict:
+async def query_nearby_pois(latitude: float, longitude: float, radius_m: int = 500) -> dict:
     """Query OSM for all nearby infrastructure within radius_m metres."""
     if latitude is None or longitude is None:
         return {}
@@ -206,29 +206,41 @@ out center 50;
 
 
 def location_score_from_pois(pois: dict) -> tuple[float, str]:
-    """Returns location_score (0-100) and a human-readable summary."""
+    """
+    Returns location_score (0-100) and a human-readable summary.
+
+    Scoring: mean of the top-3 unique-category POI scores.
+    - Avoids max() inflating every urban area to 100
+    - Avoids mean-of-all diluting critical POIs
+    - Single POI gets 85% of its score (slight isolation penalty)
+    """
     if not pois:
         return 0.0, "no important infrastructure within 500m"
 
-    best = 0.0
-    notes = []
-    for key, items in pois.items():
-        weight = (
-            CRITICAL_POI_WEIGHTS.get(key)
-            or RAILWAY_POI_WEIGHTS.get(key)
-            or AEROWAY_POI_WEIGHTS.get(key)
-            or LANDUSE_WEIGHTS.get(key)
-            or OFFICE_POI_WEIGHTS.get(key)
-            or BUILDING_POI_WEIGHTS.get(key)
-            or 30
-        )
-        count_boost = min(len(items) - 1, 2) * 5  # diminishing returns for duplicates
-        score = min(weight + count_boost, 100)
-        best = max(best, score)
-        notes.append(f"{items[0]['name']} ({key})")
+    all_weights = {
+        **CRITICAL_POI_WEIGHTS, **RAILWAY_POI_WEIGHTS,
+        **AEROWAY_POI_WEIGHTS, **LANDUSE_WEIGHTS,
+        **OFFICE_POI_WEIGHTS, **BUILDING_POI_WEIGHTS,
+    }
 
-    summary = ", ".join(notes[:5])
-    return round(best, 1), summary
+    # One score per unique category (best item in that category)
+    category_scores: list[tuple[float, str]] = []
+    for key, items in pois.items():
+        weight = all_weights.get(key, 30)
+        best_name = items[0]["name"]
+        category_scores.append((float(weight), f"{best_name} ({key})"))
+
+    # Sort descending, take top 3
+    category_scores.sort(key=lambda x: x[0], reverse=True)
+    top3 = category_scores[:3]
+    notes = [label for _, label in category_scores[:5]]
+
+    if len(top3) == 1:
+        final = top3[0][0] * 0.85          # isolation penalty
+    else:
+        final = sum(s for s, _ in top3) / len(top3)   # mean of top 3
+
+    return round(min(final, 100.0), 1), ", ".join(notes)
 
 
 # ── OSM: road traffic density ─────────────────────────────────────────────────
@@ -333,13 +345,13 @@ Analyze the image carefully and produce an Image Score (0–100) representing ph
 ### STEP 2: Apply AHP Weights
 
 Use EXACTLY these weights:
-* Image Score → 0.35
+* Image Score → 0.40
 * User Description Score → 0.25
-* Upvote Score → 0.15
 * Location Score → 0.15
 * Traffic Severity → 0.10
+* Upvote Score → 0.10
 
-Final Score = (0.35 × Image Score) + (0.25 × {round(desc_score)}) + (0.15 × {upvote_display}) + (0.15 × {round(location_score)}) + (0.10 × {round(traffic_score)})
+Final Score = (0.40 × Image Score) + (0.25 × {round(desc_score)}) + (0.15 × {round(location_score)}) + (0.10 × {round(traffic_score)}) + (0.10 × {upvote_display})
 
 ---
 
