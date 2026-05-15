@@ -13,12 +13,12 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-# AHP weights (must sum to 1.0)
-W_IMAGE = 0.40
-W_LOCATION = 0.20
-W_TRAFFIC = 0.20
-W_UPVOTE = 0.10
-W_DESCRIPTION = 0.10
+# AHP weights (must sum to 1.0) — aligned with proposal: Visual 35%, Location 20%, Sentiment 25%, Social 20%
+W_IMAGE       = 0.35  # visual
+W_LOCATION    = 0.15  # location risk
+W_TRAFFIC     = 0.10  # traffic (part of location)
+W_UPVOTE      = 0.15  # social
+W_DESCRIPTION = 0.25  # sentiment/description
 
 CRITICAL_POI_WEIGHTS = {
     "hospital": 100,
@@ -136,7 +136,7 @@ out tags 10;
         return 30.0, "unknown"
 
     if not elements:
-        return 20.0, "residential/unknown"
+        return 50.0, "unknown"
 
     # Pick the highest-traffic road found nearby
     best_score = 0
