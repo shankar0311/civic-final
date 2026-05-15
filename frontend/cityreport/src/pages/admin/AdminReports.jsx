@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Filter, SortDesc, Brain } from 'lucide-react';
+import { Filter, SortDesc, Brain, Trash2 } from 'lucide-react';
 import Navbar from '../../components/shared/Navbar';
 import Card from '../../components/shared/Card';
 import Badge from '../../components/shared/Badge';
@@ -38,6 +38,27 @@ const AdminReports = () => {
     } catch (error) {
       console.error('Error fetching reports:', error);
       setLoading(false);
+    }
+  };
+
+  const deleteReport = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    try {
+      await api.delete(`/reports/${id}`);
+      setReports(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      alert('Failed to delete report.');
+    }
+  };
+
+  const changeStatus = async (e, id, newStatus) => {
+    e.stopPropagation();
+    try {
+      await api.patch(`/reports/${id}/status`, null, { params: { new_status: newStatus } });
+      setReports(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+    } catch (err) {
+      alert('Failed to update status.');
     }
   };
 
@@ -200,6 +221,29 @@ const AdminReports = () => {
                     {new Date(report.created_at).toLocaleDateString()}
                   </span>
                   <span className="report-upvotes">👍 {report.upvotes}</span>
+                </div>
+
+                <div
+                  style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <select
+                    value={report.status}
+                    onChange={e => changeStatus(e, report.id, e.target.value)}
+                    style={{ flex: 1, padding: '0.35rem 0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border)', fontSize: '0.8rem', cursor: 'pointer' }}
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                  <button
+                    onClick={e => deleteReport(e, report.id)}
+                    style={{ padding: '0.35rem 0.6rem', borderRadius: '0.375rem', border: 'none', background: '#fee2e2', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
                 </div>
               </Card>
             ))}
