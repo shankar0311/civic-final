@@ -2,7 +2,8 @@ services:
   # Backend Service
   - type: web
     name: citizen-backend
-    env: python
+    runtime: python
+    plan: free
     buildCommand: "pip install -r backend/requirements.txt"
     startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port 10000"
     envVars:
@@ -14,7 +15,6 @@ services:
   # Frontend Service
   - type: static
     name: citizen-frontend
-    env: static
     buildCommand: "cd frontend/cityreport && npm install && npm run build"
     staticPublishPath: ./frontend/cityreport/dist
     envVars:
@@ -29,4 +29,3 @@ databases:
     databaseName: citizen_ai
     user: admin
     plan: free
-    ipAllowList: []
