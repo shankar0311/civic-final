@@ -14,6 +14,7 @@ services:
   # Frontend Service
   - type: static
     name: citizen-frontend
+    env: static
     buildCommand: "cd frontend/cityreport && npm install && npm run build"
     staticPublishPath: ./frontend/cityreport/dist
     envVars:
