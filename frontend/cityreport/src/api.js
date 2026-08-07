@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const configuredBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8005';
+let rawBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8005';
+if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
+    rawBaseUrl = `https://${rawBaseUrl}`;
+}
+
+const configuredBaseUrl = rawBaseUrl;
 
 const resolvedBaseUrl =
     configuredBaseUrl.includes('localhost') && window.location.hostname !== 'localhost'

@@ -12,9 +12,8 @@ services:
           property: connectionString
 
   # Frontend Service
-  - type: web
+  - type: static
     name: citizen-frontend
-    env: node
     buildCommand: "cd frontend/cityreport && npm install && npm run build"
     staticPublishPath: ./frontend/cityreport/dist
     envVars:
@@ -22,11 +21,11 @@ services:
         fromService:
           type: web
           name: citizen-backend
-          property: url
+          property: host
 
 databases:
   - name: citizen-db
     databaseName: citizen_ai
     user: admin
-    plan: free # or starter
-    ipAllowList: [] # Allow all for now, restrict in prod
+    plan: free
+    ipAllowList: []
