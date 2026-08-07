@@ -16,20 +16,18 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # Mount static files for uploads (must be before other routes)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# CORS — extend via ALLOWED_ORIGINS env var (comma-separated) for production
-_default_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3005",
-    "http://127.0.0.1:5173",
-]
-_extra = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-_origins = list(dict.fromkeys(_default_origins + _extra))
+raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+if raw_origins == "*":
+    _origins = ["*"]
+else:
+    _extra = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    _origins = list(dict.fromkeys(_default_origins + _extra))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    allow_credentials=True,
+    allow_credentials=True if _origins != ["*"] else False,
+    allow_origin_regex=".*" if _origins == ["*"] else None,
     allow_methods=["*"],
     allow_headers=["*"],
 )
