@@ -80,10 +80,10 @@ class Report(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     description = Column(Text)
-    category = Column(String, index=True)
+    category = Column(String)
     status = Column(Enum(ReportStatus), default=ReportStatus.pending)
     severity = Column(Enum(ReportSeverity), default=ReportSeverity.medium)
-    priority = Column(Enum(ReportPriority), default=ReportPriority.medium, index=True)
+    priority = Column(Enum(ReportPriority), default=ReportPriority.medium)
     
     image_url = Column(String, nullable=True)
     resolution_image_url = Column(String, nullable=True) # Proof of work
